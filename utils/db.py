@@ -56,6 +56,35 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS portfolio (
                 id SERIAL PRIMARY KEY, chat_id TEXT NOT NULL, symbol TEXT NOT NULL,
                 amount REAL NOT NULL, buy_price REAL NOT NULL, added_at TEXT NOT NULL, note TEXT)""")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS trade_journal (
+                id SERIAL PRIMARY KEY, chat_id TEXT NOT NULL, coin TEXT NOT NULL,
+                direction TEXT NOT NULL, entry_price REAL NOT NULL, exit_price REAL NOT NULL,
+                size_usd REAL NOT NULL DEFAULT 0, pnl_pct REAL NOT NULL, pnl_usd REAL NOT NULL DEFAULT 0,
+                emotion TEXT, mistakes TEXT, lessons TEXT,
+                traded_at TEXT NOT NULL)""")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_challenges (
+                id SERIAL PRIMARY KEY, chat_id TEXT NOT NULL, challenge_id TEXT NOT NULL,
+                started_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+                progress INTEGER DEFAULT 0, completed INTEGER DEFAULT 0)""")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_settings (
+                chat_id TEXT PRIMARY KEY, language TEXT DEFAULT 'en',
+                timezone TEXT DEFAULT 'Asia/Kathmandu', currency TEXT DEFAULT 'USD',
+                risk_profile TEXT DEFAULT 'moderate',
+                ai_style TEXT DEFAULT 'detailed', notifications INTEGER DEFAULT 1,
+                updated_at TEXT NOT NULL)""")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_scores (
+                id SERIAL PRIMARY KEY, chat_id TEXT NOT NULL,
+                score INTEGER NOT NULL, total INTEGER NOT NULL,
+                taken_at TEXT NOT NULL)""")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS coach_history (
+                id SERIAL PRIMARY KEY, chat_id TEXT NOT NULL,
+                role TEXT NOT NULL, content TEXT NOT NULL,
+                created_at TEXT NOT NULL)""")
     log.info("DB init complete (Supabase PostgreSQL)")
 
 
@@ -239,3 +268,72 @@ async def clear_portfolio(chat_id: str):
     pool = await _get_pool()
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM portfolio WHERE chat_id=$1", chat_id)
+
+
+# ── Quiz ──────────────────────────────────────────────────────────────────────
+async def save_quiz_score(chat_id: str, score: int, total: int):
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO quiz_scores (chat_id, score, total, taken_at) VALUES ($1,$2,$3,$4)",
+            chat_id, score, total, datetime.now(timezone.utc).isoformat())
+
+
+async def get_quiz_history(chat_id: str, limit: int = 10) -> list:
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM quiz_scores WHERE chat_id=$1 ORDER BY taken_at DESC LIMIT $2",
+            chat_id, limit)
+    return [dict(r) for r in rows]
+
+
+# ── User settings ─────────────────────────────────────────────────────────────
+async def get_user_settings(chat_id: str) -> dict:
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM user_settings WHERE chat_id=$1", chat_id)
+    if row:
+        return dict(row)
+    return {"chat_id": chat_id, "language": "en", "timezone": "Asia/Kathmandu",
+            "currency": "USD", "risk_profile": "moderate", "ai_style": "detailed",
+            "notifications": 1}
+
+
+async def upsert_user_settings(chat_id: str, **kwargs):
+    pool = await _get_pool()
+    kwargs["chat_id"] = chat_id
+    kwargs["updated_at"] = datetime.now(timezone.utc).isoformat()
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow("SELECT chat_id FROM user_settings WHERE chat_id=$1", chat_id)
+        if existing:
+            sets = ", ".join(f"{k}=${i+2}" for i, k in enumerate(k for k in kwargs if k != "chat_id"))
+            vals = [v for k, v in kwargs.items() if k != "chat_id"]
+            await conn.execute(f"UPDATE user_settings SET {sets} WHERE chat_id=$1", chat_id, *vals)
+        else:
+            cols = ", ".join(kwargs.keys())
+            placeholders = ", ".join(f"${i+1}" for i in range(len(kwargs)))
+            await conn.execute(f"INSERT INTO user_settings ({cols}) VALUES ({placeholders})", *kwargs.values())
+
+
+# ── Coach history ─────────────────────────────────────────────────────────────
+async def save_coach_message(chat_id: str, role: str, content: str):
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO coach_history (chat_id, role, content, created_at) VALUES ($1,$2,$3,$4)",
+            chat_id, role, content, datetime.now(timezone.utc).isoformat())
+        # Keep only last 20 messages per user
+        await conn.execute("""
+            DELETE FROM coach_history WHERE chat_id=$1 AND id NOT IN (
+                SELECT id FROM coach_history WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 20)""",
+            chat_id)
+
+
+async def get_coach_history(chat_id: str, limit: int = 6) -> list[dict]:
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT role, content FROM coach_history WHERE chat_id=$1 ORDER BY created_at DESC LIMIT $2",
+            chat_id, limit)
+    return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
