@@ -1759,7 +1759,15 @@ async def scheduled_weekly_report(app: Application):
 
 async def post_init(app: Application):
     await init_db()
-    logger.info("DB initialised")
+    scheduler.add_job(scheduled_morning_news, "cron",
+                      hour=config.MORNING_NEWS_UTC_H, minute=config.MORNING_NEWS_UTC_M, args=[app])
+    scheduler.add_job(scheduled_morning_analytics, "cron",
+                      hour=config.MORNING_SCAN_UTC_H, minute=config.MORNING_SCAN_UTC_M, args=[app])
+    scheduler.add_job(scheduled_alert_check, "interval", minutes=5, args=[app])
+    scheduler.add_job(scheduled_dca_check, "interval", minutes=30, args=[app])
+    scheduler.add_job(scheduled_weekly_report, "cron", day_of_week="sun", hour=4, minute=15, args=[app])
+    scheduler.start()
+    logger.info("DB initialised, scheduler started")
 
 
 def main():
@@ -1792,15 +1800,6 @@ def main():
     app.add_handler(CommandHandler("calc", cmd_calc))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
-
-    scheduler.add_job(scheduled_morning_news, "cron",
-                      hour=config.MORNING_NEWS_UTC_H, minute=config.MORNING_NEWS_UTC_M, args=[app])
-    scheduler.add_job(scheduled_morning_analytics, "cron",
-                      hour=config.MORNING_SCAN_UTC_H, minute=config.MORNING_SCAN_UTC_M, args=[app])
-    scheduler.add_job(scheduled_alert_check, "interval", minutes=5, args=[app])
-    scheduler.add_job(scheduled_dca_check, "interval", minutes=30, args=[app])
-    scheduler.add_job(scheduled_weekly_report, "cron", day_of_week="sun", hour=4, minute=15, args=[app])
-    scheduler.start()
 
     logger.info("🤖 Trading AI Assistant started.")
     app.run_polling(drop_pending_updates=False)
