@@ -21,6 +21,10 @@ import config
 from utils.keyboards import kb, kb_home
 from utils.fmt import npt_now, fp
 from layers.l1_data import fetch_latest_news, fetch_fear_greed
+from layers.coingecko_api import (
+    build_live_market_message, fetch_global_data, format_global_data,
+    fetch_coin_detail, format_coin_detail, get_coin_id, search_coins,
+)
 from layers.l2_technical import analyze, fetch_ticker, close_exchange, test_all_sources
 from layers.l_opportunities import scan_opportunities, format_opportunities
 from layers.chart import generate_chart
@@ -388,6 +392,33 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(home_text(), parse_mode=ParseMode.HTML, reply_markup=main_keyboard())
 
 
+async def cmd_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    parts = update.message.text.split()[1:]
+    if not parts:
+        await update.message.reply_text(
+            "💰 <b>Price Lookup</b>\n\nUsage: <code>/price BTC</code> or <code>/price ethereum</code>",
+            parse_mode=ParseMode.HTML)
+        return
+    query_str = parts[0].upper()
+    await update.message.reply_text(f"🔍 Looking up <b>{query_str}</b>...", parse_mode=ParseMode.HTML)
+    try:
+        coin_id = get_coin_id(query_str) or query_str.lower()
+        d = await fetch_coin_detail(coin_id)
+        text = format_coin_detail(d)
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML,
+                                        reply_markup=kb([("🔄 Refresh", f"scan_{query_str}")], back="market"))
+    except Exception:
+        results = await search_coins(query_str)
+        if results:
+            names = ", ".join(f"{c['symbol'].upper()} ({c['name']})" for c in results[:3])
+            await update.message.reply_text(
+                f"❓ <b>{query_str}</b> not found directly. Did you mean: {names}?\n"
+                f"Try <code>/price {results[0]['symbol'].upper()}</code>",
+                parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(f"❌ Could not find price for <b>{query_str}</b>.", parse_mode=ParseMode.HTML)
+
+
 async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(home_text(), parse_mode=ParseMode.HTML, reply_markup=main_keyboard())
 
@@ -613,20 +644,35 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     if action == "market_overview":
-        await _edit(query, "📊 <b>Market Overview</b>\n\nSelect a view:", market_overview_keyboard())
+        await query.edit_message_text("🌍 Loading global market data...", parse_mode=ParseMode.HTML)
+        try:
+            gd = await fetch_global_data()
+            text = format_global_data(gd) + "\n\nSelect a view:"
+            await _edit(query, text, market_overview_keyboard())
+        except Exception:
+            await _edit(query, "📊 <b>Market Overview</b>\n\nSelect a view:", market_overview_keyboard())
         return
 
     if action in ("market_btc", "market_eth", "market_alts", "market_trend", "market_volume", "market_liq"):
-        coin_map = {"market_btc": "BTC", "market_eth": "ETH", "market_alts": "SOL",
-                    "market_trend": "BNB", "market_volume": "XRP", "market_liq": "BTC"}
-        symbol = coin_map.get(action, "BTC")
+        cg_map = {"market_btc": "bitcoin", "market_eth": "ethereum", "market_alts": "solana",
+                  "market_trend": "binancecoin", "market_volume": "ripple", "market_liq": "bitcoin"}
+        sym_map = {"market_btc": "BTC", "market_eth": "ETH", "market_alts": "SOL",
+                   "market_trend": "BNB", "market_volume": "XRP", "market_liq": "BTC"}
+        coin_id = cg_map.get(action, "bitcoin")
+        symbol = sym_map.get(action, "BTC")
         await query.edit_message_text(f"🔍 Loading {symbol} overview...", parse_mode=ParseMode.HTML)
         try:
-            result = await run_token_deep_dive(symbol)
+            d = await fetch_coin_detail(coin_id)
+            result = format_coin_detail(d)
             await query.edit_message_text(result, parse_mode=ParseMode.HTML,
                                            reply_markup=kb([("🔄 Refresh", action)], back="market_overview"))
-        except Exception as e:
-            await _edit(query, f"❌ Error: {e}", kb(back="market_overview"))
+        except Exception:
+            try:
+                result = await run_token_deep_dive(symbol)
+                await query.edit_message_text(result, parse_mode=ParseMode.HTML,
+                                               reply_markup=kb([("🔄 Refresh", action)], back="market_overview"))
+            except Exception as e:
+                await _edit(query, f"❌ Error: {e}", kb(back="market_overview"))
         return
 
     if action == "live_market":
@@ -637,11 +683,16 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                   "live_volume", "live_volatile", "live_whale_buy", "live_whale_sell"):
         await query.edit_message_text("📊 Loading market data...", parse_mode=ParseMode.HTML)
         try:
-            result = await _build_live_market(action)
+            result = await build_live_market_message(action)
             await query.edit_message_text(result, parse_mode=ParseMode.HTML,
                                            reply_markup=kb([("🔄 Refresh", action)], back="live_market"))
-        except Exception as e:
-            await _edit(query, f"❌ {e}", kb(back="live_market"))
+        except Exception:
+            try:
+                result = await _build_live_market(action)
+                await query.edit_message_text(result, parse_mode=ParseMode.HTML,
+                                               reply_markup=kb([("🔄 Refresh", action)], back="live_market"))
+            except Exception as e:
+                await _edit(query, f"❌ {e}", kb(back="live_market"))
         return
 
     if action == "coin_scanner":
@@ -673,7 +724,13 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if action == "feargreed":
         await query.edit_message_text("😱 Loading Fear & Greed...", parse_mode=ParseMode.HTML)
         try:
-            result = await _build_fear_greed()
+            import asyncio as _asyncio
+            fg_task = _build_fear_greed()
+            gd_task = fetch_global_data()
+            fg_result, gd_result = await _asyncio.gather(fg_task, gd_task, return_exceptions=True)
+            result = fg_result if isinstance(fg_result, str) else "⚠️ F&G unavailable."
+            if not isinstance(gd_result, Exception):
+                result += "\n\n" + format_global_data(gd_result)
             await query.edit_message_text(result, parse_mode=ParseMode.HTML,
                                            reply_markup=kb([("🔄 Refresh", "feargreed")], back="market"))
         except Exception as e:
@@ -1798,6 +1855,7 @@ def main():
     app.add_handler(CommandHandler("token", cmd_token))
     app.add_handler(CommandHandler("journal", cmd_journal))
     app.add_handler(CommandHandler("calc", cmd_calc))
+    app.add_handler(CommandHandler("price", cmd_price))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 
