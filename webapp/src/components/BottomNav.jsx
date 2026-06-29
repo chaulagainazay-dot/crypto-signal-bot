@@ -1,9 +1,9 @@
 const TABS = [
   { id: 'guide',     icon: '🤖', label: 'Guide'     },
   { id: 'signals',   icon: '🎯', label: 'Signals'   },
+  { id: 'strategy',  icon: '📊', label: 'Strategy'  },
   { id: 'portfolio', icon: '💼', label: 'Portfolio'  },
   { id: 'research',  icon: '🔍', label: 'Research'   },
-  { id: 'alerts',    icon: '🔔', label: 'Alerts'    },
 ]
 
 export default function BottomNav({ active, onSelect }) {

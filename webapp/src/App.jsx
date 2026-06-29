@@ -2,6 +2,7 @@ import { useState } from 'react'
 import BottomNav from './components/BottomNav'
 import Guide from './tabs/Guide'
 import Signals from './tabs/Signals'
+import Strategy from './tabs/Strategy'
 import Portfolio from './tabs/Portfolio'
 import Research from './tabs/Research'
 import Alerts from './tabs/Alerts'
@@ -19,6 +20,7 @@ export default function App() {
     switch (tab) {
       case 'guide':     return <Guide />
       case 'signals':   return <Signals />
+      case 'strategy':  return <Strategy />
       case 'portfolio': return <Portfolio />
       case 'research':  return <Research key={researchCoin} initialCoinId={researchCoin} />
       case 'alerts':    return <Alerts />
