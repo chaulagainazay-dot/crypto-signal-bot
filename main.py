@@ -24,7 +24,7 @@ from layers.l1_data import fetch_latest_news, fetch_fear_greed
 from layers.coingecko_api import (
     build_live_market_message, fetch_global_data, format_global_data,
     fetch_coin_detail, format_coin_detail, get_coin_id, search_coins,
-    detect_contract_address, fetch_coin_by_contract,
+    detect_contract_address, fetch_coin_by_contract, parse_coingecko_url,
 )
 from layers.l2_technical import analyze, fetch_ticker, close_exchange, test_all_sources
 from layers.l_opportunities import scan_opportunities, format_opportunities
@@ -405,6 +405,17 @@ async def cmd_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML)
         return
     query_str = parts[0]
+
+    # CoinGecko URL?
+    cg_id = parse_coingecko_url(" ".join(parts))
+    if cg_id:
+        await update.message.reply_text(f"🔍 Looking up <b>{cg_id}</b>...", parse_mode=ParseMode.HTML)
+        try:
+            d = await fetch_coin_detail(cg_id)
+            await update.message.reply_text(format_coin_detail(d), parse_mode=ParseMode.HTML, reply_markup=kb_home())
+        except Exception as e:
+            await update.message.reply_text(f"❌ {e}", parse_mode=ParseMode.HTML)
+        return
 
     # Contract address?
     addr = detect_contract_address(query_str)
@@ -1609,22 +1620,37 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Contract address lookup (EVM 0x... or Solana base58)
+    # CoinGecko URL — extract coin ID and look up directly
+    cg_id = parse_coingecko_url(text)
+    if cg_id:
+        msg = await update.message.reply_text(f"🔍 Looking up CoinGecko: <b>{cg_id}</b>...", parse_mode=ParseMode.HTML)
+        try:
+            d = await fetch_coin_detail(cg_id)
+            from layers.coingecko_api import format_coin_detail as _fcd
+            await msg.edit_text(_fcd(d), parse_mode=ParseMode.HTML,
+                                reply_markup=kb([("🔄 Refresh", f"scan_{d.get('symbol','').upper()}")],
+                                               back="coin_scanner"))
+        except Exception as e:
+            await msg.edit_text(f"❌ Could not load <b>{cg_id}</b>: {e}", parse_mode=ParseMode.HTML, reply_markup=kb_home())
+        return
+
+    # Contract address lookup (EVM 0x... or Solana/Aptos base58)
     addr = detect_contract_address(text.strip())
     if addr:
         msg = await update.message.reply_text(
-            f"🔍 Looking up contract <code>{addr[:10]}…</code>", parse_mode=ParseMode.HTML)
+            f"🔍 Searching <code>{addr[:10]}…</code> across 30+ chains...",
+            parse_mode=ParseMode.HTML)
         try:
             d = await fetch_coin_by_contract(addr)
             if d:
-                from layers.coingecko_api import format_coin_detail
-                await msg.edit_text(format_coin_detail(d), parse_mode=ParseMode.HTML,
+                from layers.coingecko_api import format_coin_detail as _fcd
+                await msg.edit_text(_fcd(d), parse_mode=ParseMode.HTML,
                                     reply_markup=kb([("🔄 Refresh", f"scan_{d.get('symbol','').upper()}")],
                                                     back="coin_scanner"))
             else:
                 await msg.edit_text(
-                    f"❌ No coin found for contract <code>{addr}</code>.\n\n"
-                    "Check the address or try a different chain.",
+                    f"❌ Contract <code>{addr}</code> not found on any supported chain.\n\n"
+                    "This may be a wallet address (not a token), or a very new token not yet listed on CoinGecko.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=kb_home())
         except Exception as e:

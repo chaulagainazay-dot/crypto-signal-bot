@@ -181,18 +181,21 @@ async def search_coins(query: str) -> list[dict]:
     return data.get("coins", [])[:5]
 
 
-# Platforms to try for contract address lookup, in priority order
+# All EVM-compatible + major non-EVM platforms CoinGecko supports
 _CONTRACT_PLATFORMS = [
-    "ethereum",
-    "solana",
-    "binance-smart-chain",
-    "polygon-pos",
-    "arbitrum-one",
-    "base",
-    "optimistic-ethereum",
-    "avalanche",
-    "fantom",
-    "tron",
+    # Tier 1 — highest TVL / most tokens
+    "ethereum", "binance-smart-chain", "polygon-pos", "arbitrum-one",
+    "base", "optimistic-ethereum", "solana", "tron", "avalanche", "fantom",
+    # Tier 2
+    "zksync", "linea", "scroll", "blast", "manta-pacific", "mode",
+    "mantle", "celo", "gnosis", "moonbeam", "moonriver", "cronos",
+    "kava", "harmony-shard-0", "aurora", "boba", "metis-andromeda",
+    "okex-chain", "huobi-token", "xdc-network", "thundercore",
+    # Tier 3 — newer L2s / alt-L1s
+    "sei-network", "injective", "near-protocol", "sui", "aptos",
+    "stacks", "hedera-hashgraph", "tomochain", "wanchain",
+    "bitgert", "dogechain", "kardiachain", "oasis",
+    "zora-network", "cyber", "mint-blockchain",
 ]
 
 
@@ -203,21 +206,44 @@ def detect_contract_address(text: str) -> str | None:
     # EVM: 0x + 40 hex chars
     if re.fullmatch(r"0x[0-9a-fA-F]{40}", text):
         return text
-    # Solana: base58, 32–44 chars (no 0x prefix, alphanumeric minus 0OIl)
-    if re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", text):
+    # Solana / Aptos / Sui / Near: base58 or base64-ish, 32–88 chars, no spaces
+    if re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,88}", text):
         return text
     return None
 
 
+def parse_coingecko_url(text: str) -> str | None:
+    """Extract coin ID from a CoinGecko URL.
+    e.g. https://www.coingecko.com/en/coins/bitcoin  → 'bitcoin'
+         https://coingecko.com/coins/jupiter-exchange-solana → 'jupiter-exchange-solana'
+    """
+    import re
+    m = re.search(r"coingecko\.com(?:/[a-z]{2})?/coins/([a-z0-9\-]+)", text)
+    return m.group(1) if m else None
+
+
 async def fetch_coin_by_contract(address: str) -> dict | None:
-    """Try each major platform until we find the coin for this contract address."""
-    for platform in _CONTRACT_PLATFORMS:
+    """Try every platform until we find the coin for this contract address."""
+    import asyncio
+    address_lower = address.lower()
+
+    # Try platforms in batches of 6 concurrently to speed up
+    async def _try(platform: str) -> dict | None:
         try:
-            data = await _get(f"/coins/{platform}/contract/{address}")
+            data = await _get(f"/coins/{platform}/contract/{address_lower}")
             if data.get("id"):
                 return data
         except Exception:
-            continue
+            pass
+        return None
+
+    batch_size = 6
+    for i in range(0, len(_CONTRACT_PLATFORMS), batch_size):
+        batch = _CONTRACT_PLATFORMS[i:i + batch_size]
+        results = await asyncio.gather(*[_try(p) for p in batch])
+        for r in results:
+            if r:
+                return r
     return None
 
 
