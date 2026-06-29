@@ -1609,7 +1609,29 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Coin lookup
+    # Contract address lookup (EVM 0x... or Solana base58)
+    addr = detect_contract_address(text.strip())
+    if addr:
+        msg = await update.message.reply_text(
+            f"🔍 Looking up contract <code>{addr[:10]}…</code>", parse_mode=ParseMode.HTML)
+        try:
+            d = await fetch_coin_by_contract(addr)
+            if d:
+                from layers.coingecko_api import format_coin_detail
+                await msg.edit_text(format_coin_detail(d), parse_mode=ParseMode.HTML,
+                                    reply_markup=kb([("🔄 Refresh", f"scan_{d.get('symbol','').upper()}")],
+                                                    back="coin_scanner"))
+            else:
+                await msg.edit_text(
+                    f"❌ No coin found for contract <code>{addr}</code>.\n\n"
+                    "Check the address or try a different chain.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb_home())
+        except Exception as e:
+            await msg.edit_text(f"❌ Error: {e}", parse_mode=ParseMode.HTML, reply_markup=kb_home())
+        return
+
+    # Coin ticker lookup
     ticker = text.upper().strip()
     if 2 <= len(ticker) <= 8 and ticker.isalpha():
         msg = await update.message.reply_text(f"🔍 Scanning {ticker}...", parse_mode=ParseMode.HTML)
