@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { fetchCoinDetail, fetchCryptoNews, fp, fmcap } from '../api/coingecko'
+import { useState, useEffect } from 'react'
+import { fetchCoinDetail, fetchCryptoNews, fetchTopCoins, fp, fmcap } from '../api/coingecko'
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
 const ALERT_KEY = 'hcg_alerts_v2'
@@ -235,13 +235,11 @@ export default function Alerts() {
   useEffect(() => {
     if (alerts.length === 0) return
     const syms = [...new Set(alerts.map(a => a.symbol))]
-    import('../api/coingecko').then(({ fetchTopCoins }) => {
-      fetchTopCoins(250).then(coins => {
-        const m = {}
-        coins.forEach(c => { m[c.symbol.toUpperCase()] = c.current_price })
-        setPrices(m)
-      }).catch(() => {})
-    })
+    fetchTopCoins(250).then(coins => {
+      const m = {}
+      coins.forEach(c => { m[c.symbol.toUpperCase()] = c.current_price })
+      setPrices(m)
+    }).catch(() => {})
   }, [alerts.length])
 
   function addAlert() {
