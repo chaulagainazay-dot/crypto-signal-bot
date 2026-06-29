@@ -13,11 +13,12 @@ export default function Market({ onResearch }) {
   const [loading, setLoading] = useState(true)
   const [lastUp, setLastUp]   = useState(null)
 
+  const [error, setError] = useState('')
   const load = useCallback(() => {
-    setLoading(true)
+    setLoading(true); setError('')
     Promise.all([fetchGlobal(), fetchTopCoins(100), fetchTrending()])
       .then(([g, c, t]) => { setGlobal(g); setCoins(c); setTrend(t); setLastUp(new Date()) })
-      .catch(console.error)
+      .catch(e => setError('CoinGecko rate-limited. Tap Refresh to retry.'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -80,6 +81,11 @@ export default function Market({ onResearch }) {
       </div>
 
       {loading && <Spinner text="Loading market data…" />}
+      {!loading && error && (
+        <div style={{ textAlign: 'center', padding: '32px 16px', color: '#FF3D57' }}>
+          ⚠️ {error}
+        </div>
+      )}
 
       {/* Trending */}
       {!loading && view === 'Trending' && trending.map((c, i) => (
