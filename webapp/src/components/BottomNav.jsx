@@ -1,5 +1,5 @@
 const TABS = [
-  { id: 'market',    icon: '📈', label: 'Market'    },
+  { id: 'guide',     icon: '🤖', label: 'Guide'     },
   { id: 'signals',   icon: '🎯', label: 'Signals'   },
   { id: 'portfolio', icon: '💼', label: 'Portfolio'  },
   { id: 'research',  icon: '🔍', label: 'Research'   },

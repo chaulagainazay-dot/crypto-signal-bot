@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import BottomNav from './components/BottomNav'
-import Market from './tabs/Market'
+import Guide from './tabs/Guide'
 import Signals from './tabs/Signals'
 import Portfolio from './tabs/Portfolio'
 import Research from './tabs/Research'
 import Alerts from './tabs/Alerts'
 
 export default function App() {
-  const [tab, setTab]           = useState('market')
+  const [tab, setTab]           = useState('guide')
   const [researchCoin, setRC]   = useState(null)
 
   function goResearch(coinId) {
@@ -17,12 +17,12 @@ export default function App() {
 
   function renderTab() {
     switch (tab) {
-      case 'market':    return <Market onResearch={goResearch} />
+      case 'guide':     return <Guide />
       case 'signals':   return <Signals />
       case 'portfolio': return <Portfolio />
       case 'research':  return <Research key={researchCoin} initialCoinId={researchCoin} />
       case 'alerts':    return <Alerts />
-      default:          return <Market onResearch={goResearch} />
+      default:          return <Guide />
     }
   }
 
