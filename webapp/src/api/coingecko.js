@@ -44,10 +44,20 @@ export async function fetchPriceChart(id, days = 7) {
   return d.prices || []
 }
 
-export async function fetchNews(coinId) {
+// OHLC candle data: returns [[ts, open, high, low, close], ...]
+export async function fetchOHLC(id, days = 7) {
+  const d = await get(`${CG}/coins/${id}/ohlc?vs_currency=usd&days=${days}`)
+  return Array.isArray(d) ? d : []
+}
+
+// CryptoCompare free news — no API key needed
+export async function fetchCryptoNews(symbol, limit = 6) {
   try {
-    const d = await get(`${CG}/coins/${coinId}/status_updates?per_page=5`)
-    return d.status_updates || []
+    const url = `https://min-api.cryptocompare.com/data/v2/news/?categories=${encodeURIComponent(symbol.toUpperCase())}&lang=EN&limit=${limit}&sortOrder=latest`
+    const r = await fetch(url, { signal: AbortSignal.timeout(10000) })
+    if (!r.ok) throw new Error()
+    const d = await r.json()
+    return (d.Data || []).slice(0, limit)
   } catch { return [] }
 }
 
