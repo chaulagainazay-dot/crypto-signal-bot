@@ -27,7 +27,7 @@ export default function App() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', paddingBottom: 80 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', height: '100vh', background: 'var(--bg)', overflow: 'hidden' }}>
       {renderTab()}
       <BottomNav active={tab} onSelect={t => { setTab(t); if (t !== 'research') setRC(null) }} />
     </div>

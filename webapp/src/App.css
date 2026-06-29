@@ -18,8 +18,11 @@ body {
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   overflow: hidden;
-  height: 100vh;
+  height: 100%;
+  height: 100dvh;
 }
+
+html { height: 100%; height: 100dvh; }
 
 #root {
   display: flex;
@@ -31,8 +34,10 @@ body {
 .tab-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 16px calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 8px);
+  overflow-x: hidden;
+  padding: 16px 16px 24px;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .card {
