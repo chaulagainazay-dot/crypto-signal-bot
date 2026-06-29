@@ -8,3 +8,4 @@ logs/
 *.log
 *.db
 .DS_Store
+webapp-v2/node_modules/
