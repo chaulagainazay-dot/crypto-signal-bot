@@ -407,6 +407,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _check_access(_user_id(update), update.message): return
     parts = update.message.text.split()[1:]
     if not parts:
         await update.message.reply_text(
@@ -474,6 +475,7 @@ async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_alert(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _check_access(_user_id(update), update.message): return
     if _is_group(update):
         await _redirect_to_dm(update, ctx, "Alerts")
         return
@@ -511,6 +513,7 @@ async def cmd_delalert(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_dca(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _check_access(_user_id(update), update.message): return
     if _is_group(update):
         await _redirect_to_dm(update, ctx, "DCA Planner")
         return
@@ -544,6 +547,7 @@ async def cmd_canceldca(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_addholding(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _check_access(_user_id(update), update.message): return
     if _is_group(update):
         await _redirect_to_dm(update, ctx, "Portfolio")
         return
@@ -565,6 +569,7 @@ async def cmd_addholding(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_removeholding(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _check_access(_user_id(update), update.message): return
     parts = update.message.text.split()[1:]
     if not parts:
         await update.message.reply_text("Usage: /remove <id>")
@@ -579,6 +584,7 @@ async def cmd_removeholding(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_token(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _check_access(_user_id(update), update.message): return
     parts = update.message.text.split()[1:]
     if not parts:
         await update.message.reply_text("Usage: /token BTC")
@@ -594,6 +600,7 @@ async def cmd_token(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_journal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _check_access(_user_id(update), update.message): return
     if _is_group(update):
         await _redirect_to_dm(update, ctx, "Journal")
         return
@@ -627,6 +634,7 @@ async def cmd_journal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_calc(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _check_access(_user_id(update), update.message): return
     parts = update.message.text.split()[1:]
     if not parts:
         await update.message.reply_text(
@@ -678,6 +686,33 @@ async def cmd_calc(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # BUTTON HANDLER
 # ═══════════════════════════════════════════════════════════════════════════════
 
+_LOCKED_MSG = (
+    "🔒 <b>Access Required</b>\n\n"
+    "This bot is private. You need approval to use it.\n\n"
+    "👉 Open the app below to request access — takes 10 seconds."
+)
+
+async def _check_access(uid: str, update_or_query) -> bool:
+    """Return True if user is approved. Otherwise send locked message and return False."""
+    from access_control import is_approved
+    if is_approved(uid):
+        return True
+    kb_lock = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🚀 Request Access", web_app=WebAppInfo(url=config.WEBAPP_URL))
+    ]] if config.WEBAPP_URL else [[]])
+    msg = _LOCKED_MSG
+    try:
+        if hasattr(update_or_query, 'edit_message_text'):
+            # It's a CallbackQuery
+            await update_or_query.edit_message_text(msg, parse_mode=ParseMode.HTML, reply_markup=kb_lock)
+        else:
+            # It's a Message
+            await update_or_query.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=kb_lock)
+    except Exception:
+        pass
+    return False
+
+
 async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -687,6 +722,12 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if action == "menu":
         await _edit(query, home_text(), main_keyboard())
         return
+
+    # Access-controlled actions — everything except menu and access callbacks
+    _OPEN_ACTIONS = {"menu"}
+    if not action.startswith("access_") and action not in _OPEN_ACTIONS:
+        if not await _check_access(uid, query):
+            return
 
     # ── MARKET ────────────────────────────────────────────────────────────────
     if action == "market":
@@ -1761,6 +1802,10 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
     if text.startswith("/"):
+        return
+
+    # Lock all free-text features to approved users
+    if not await _check_access(uid, update.message):
         return
 
     # AI Coach mode
