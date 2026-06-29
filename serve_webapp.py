@@ -10,7 +10,7 @@ from aiohttp import web
 
 log = logging.getLogger(__name__)
 
-DIST = Path(__file__).parent / "webapp" / "dist"
+DIST = Path(__file__).parent / "webapp-v2" / "dist"
 
 
 async def make_app() -> web.Application:
