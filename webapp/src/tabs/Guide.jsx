@@ -88,6 +88,58 @@ const QUIZ = [
   },
 ]
 
+function newsSentiment(title = '') {
+  const t = title.toLowerCase()
+  const pos = ['surge','rally','bullish','pump','breakout','gain','high','rise','soar','ath','launch','partnership','adoption','buy','approve','etf','record']
+  const neg = ['crash','drop','bear','dump','ban','hack','fraud','scam','fall','plunge','fear','warning','low','down','sell','arrest','fine','lawsuit']
+  const p = pos.filter(w => t.includes(w)).length
+  const n = neg.filter(w => t.includes(w)).length
+  if (p > n) return { label: '🟢 Bullish', color: '#00C853' }
+  if (n > p) return { label: '🔴 Bearish', color: '#FF3D57' }
+  return             { label: '⚪ Neutral', color: '#808080' }
+}
+
+function NewsSection({ articles, loading }) {
+  if (loading) return <Spinner text="Loading market news…" />
+  if (!articles.length) return (
+    <div style={{ textAlign: 'center', color: '#606060', padding: '40px 0' }}>No news loaded.</div>
+  )
+  return (
+    <div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
+        Latest crypto market news · Tap to read full article
+      </div>
+      {articles.map((art, i) => {
+        const s = newsSentiment(art.title)
+        return (
+          <a key={i} href={art.url} target="_blank" rel="noreferrer"
+            style={{ display: 'block', textDecoration: 'none', marginBottom: 8 }}>
+            <div className="card" style={{ borderLeft: `3px solid ${s.color}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: s.color }}>{s.label}</span>
+                <span className="muted" style={{ fontSize: 10 }}>
+                  {new Date(art.published_on * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#E0E0E0', lineHeight: 1.5, marginBottom: 4 }}>
+                {art.title}
+              </div>
+              {art.body && (
+                <div className="muted" style={{ fontSize: 11, lineHeight: 1.5 }}>
+                  {art.body.slice(0, 120)}{art.body.length > 120 ? '…' : ''}
+                </div>
+              )}
+              <div style={{ marginTop: 6, fontSize: 10, color: '#505050' }}>
+                {art.source_info?.name || art.source} ↗
+              </div>
+            </div>
+          </a>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function Guide() {
   const [global,    setGlobal]   = useState(null)
   const [fgValue,   setFG]       = useState(null)
@@ -98,7 +150,9 @@ export default function Guide() {
   const [tipIdx,    setTipIdx]   = useState(() => Math.floor(Math.random() * TIPS.length))
   const [quizIdx,   setQuizIdx]  = useState(0)
   const [quizAns,   setQuizAns]  = useState(null)
-  const [section,   setSection]  = useState('briefing') // briefing | learn | quiz
+  const [section,   setSection]  = useState('briefing') // briefing | news | learn | quiz
+  const [fullNews,  setFullNews] = useState([])
+  const [newsLoad,  setNewsLoad] = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -117,12 +171,20 @@ export default function Guide() {
     .finally(() => setLoading(false))
   }, [])
 
+  useEffect(() => {
+    if (section !== 'news' || fullNews.length > 0 || newsLoad) return
+    setNewsLoad(true)
+    fetchCryptoNews('cryptocurrency', 20).then(articles => {
+      setFullNews(articles)
+    }).catch(() => {}).finally(() => setNewsLoad(false))
+  }, [section])
+
   const topBuys = topCoins
     .filter(c => (c.price_change_percentage_24h || 0) > 4 && (c.total_volume / c.market_cap) > 0.05)
     .slice(0, 3)
 
-  const SECTIONS = ['briefing', 'learn', 'quiz']
-  const SECTION_LABELS = { briefing: '📋 Briefing', learn: '📚 Learn', quiz: '🧠 Quiz' }
+  const SECTIONS = ['briefing', 'news', 'learn', 'quiz']
+  const SECTION_LABELS = { briefing: '📋 Briefing', news: '📰 News', learn: '📚 Learn', quiz: '🧠 Quiz' }
 
   return (
     <div className="tab-content">
@@ -213,6 +275,11 @@ export default function Guide() {
             </div>
           )}
         </>
+      )}
+
+      {/* ── NEWS ── */}
+      {section === 'news' && (
+        <NewsSection articles={fullNews} loading={newsLoad} />
       )}
 
       {/* ── LEARN ── */}
