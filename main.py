@@ -24,7 +24,9 @@ from layers.l1_data import fetch_latest_news, fetch_fear_greed
 from layers.coingecko_api import (
     build_live_market_message, fetch_global_data, format_global_data,
     fetch_coin_detail, format_coin_detail, get_coin_id, search_coins,
-    detect_contract_address, fetch_coin_by_contract, parse_coingecko_url,
+    detect_contract_address, fetch_coin_by_contract,
+    parse_coingecko_url, parse_geckoterminal_url,
+    fetch_geckoterminal_pool, format_geckoterminal_token, format_geckoterminal_pool,
 )
 from layers.l2_technical import analyze, fetch_ticker, close_exchange, test_all_sources
 from layers.l_opportunities import scan_opportunities, format_opportunities
@@ -424,12 +426,17 @@ async def cmd_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             d = await fetch_coin_by_contract(addr)
             if d:
-                await update.message.reply_text(format_coin_detail(d), parse_mode=ParseMode.HTML,
-                                                reply_markup=kb_home())
+                if d.get("_geckoterminal"):
+                    result = format_geckoterminal_token(d["_attrs"], d["_network"])
+                else:
+                    result = format_coin_detail(d)
+                await update.message.reply_text(result, parse_mode=ParseMode.HTML, reply_markup=kb_home())
                 return
         except Exception:
             pass
-        await update.message.reply_text(f"❌ No coin found for contract <code>{addr}</code>.", parse_mode=ParseMode.HTML)
+        await update.message.reply_text(
+            f"❌ No coin found for contract <code>{addr}</code>.\n\nMay be a wallet address or unlisted token.",
+            parse_mode=ParseMode.HTML)
         return
 
     await update.message.reply_text(f"🔍 Looking up <b>{query_str}</b>...", parse_mode=ParseMode.HTML)
@@ -1634,6 +1641,27 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await msg.edit_text(f"❌ Could not load <b>{cg_id}</b>: {e}", parse_mode=ParseMode.HTML, reply_markup=kb_home())
         return
 
+    # GeckoTerminal URL — handles small/new tokens not on CoinGecko main index
+    gt = parse_geckoterminal_url(text)
+    if gt:
+        network, kind, address = gt
+        msg = await update.message.reply_text(
+            f"🔍 Loading <b>{kind[:-1]}</b> on <b>{network.upper()}</b>...", parse_mode=ParseMode.HTML)
+        try:
+            if kind == "pools":
+                attrs = await fetch_geckoterminal_pool(network, address)
+                result = format_geckoterminal_pool(attrs, network) if attrs else None
+            else:
+                attrs = await fetch_geckoterminal_token(network, address)
+                result = format_geckoterminal_token(attrs, network) if attrs else None
+            if result:
+                await msg.edit_text(result, parse_mode=ParseMode.HTML, reply_markup=kb_home())
+            else:
+                await msg.edit_text("❌ Could not load data from GeckoTerminal.", parse_mode=ParseMode.HTML, reply_markup=kb_home())
+        except Exception as e:
+            await msg.edit_text(f"❌ Error: {e}", parse_mode=ParseMode.HTML, reply_markup=kb_home())
+        return
+
     # Contract address lookup (EVM 0x... or Solana/Aptos base58)
     addr = detect_contract_address(text.strip())
     if addr:
@@ -1643,14 +1671,18 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             d = await fetch_coin_by_contract(addr)
             if d:
-                from layers.coingecko_api import format_coin_detail as _fcd
-                await msg.edit_text(_fcd(d), parse_mode=ParseMode.HTML,
-                                    reply_markup=kb([("🔄 Refresh", f"scan_{d.get('symbol','').upper()}")],
-                                                    back="coin_scanner"))
+                if d.get("_geckoterminal"):
+                    result = format_geckoterminal_token(d["_attrs"], d["_network"])
+                else:
+                    from layers.coingecko_api import format_coin_detail as _fcd
+                    result = _fcd(d)
+                sym = (d.get("_attrs", {}).get("symbol") or d.get("symbol", "")).upper()
+                await msg.edit_text(result, parse_mode=ParseMode.HTML,
+                                    reply_markup=kb([("🔄 Refresh", f"scan_{sym}")], back="coin_scanner"))
             else:
                 await msg.edit_text(
-                    f"❌ Contract <code>{addr}</code> not found on any supported chain.\n\n"
-                    "This may be a wallet address (not a token), or a very new token not yet listed on CoinGecko.",
+                    f"❌ Contract <code>{addr}</code> not found on CoinGecko or GeckoTerminal.\n\n"
+                    "This may be a wallet address (not a token), or a token too new to be indexed.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=kb_home())
         except Exception as e:

@@ -1,10 +1,13 @@
-"""CoinGecko free API — no key required."""
+"""CoinGecko + GeckoTerminal free APIs — no key required."""
+from __future__ import annotations
 import aiohttp
 import logging
+import re
 
 log = logging.getLogger(__name__)
 
 BASE = "https://api.coingecko.com/api/v3"
+GT_BASE = "https://api.geckoterminal.com/api/v2"
 
 # Common symbol → CoinGecko ID map
 SYMBOL_MAP = {
@@ -201,7 +204,6 @@ _CONTRACT_PLATFORMS = [
 
 def detect_contract_address(text: str) -> str | None:
     """Return the address if text looks like a contract address, else None."""
-    import re
     text = text.strip()
     # EVM: 0x + 40 hex chars
     if re.fullmatch(r"0x[0-9a-fA-F]{40}", text):
@@ -215,20 +217,104 @@ def detect_contract_address(text: str) -> str | None:
 def parse_coingecko_url(text: str) -> str | None:
     """Extract coin ID from a CoinGecko URL.
     e.g. https://www.coingecko.com/en/coins/bitcoin  → 'bitcoin'
-         https://coingecko.com/coins/jupiter-exchange-solana → 'jupiter-exchange-solana'
     """
-    import re
     m = re.search(r"coingecko\.com(?:/[a-z]{2})?/coins/([a-z0-9\-]+)", text)
     return m.group(1) if m else None
 
 
+def parse_geckoterminal_url(text: str) -> tuple[str, str, str] | None:
+    """Extract (network, kind, address) from a GeckoTerminal URL.
+    e.g. https://www.geckoterminal.com/bsc/pools/0xABC…  → ('bsc', 'pools', '0xABC…')
+         https://www.geckoterminal.com/eth/tokens/0xDEF… → ('eth', 'tokens', '0xDEF…')
+    """
+    m = re.search(r"geckoterminal\.com/([^/]+)/(pools|tokens)/([0-9a-zA-Z]+)", text)
+    return (m.group(1), m.group(2), m.group(3)) if m else None
+
+
+async def _gt_get(path: str) -> dict:
+    url = f"{GT_BASE}{path}"
+    headers = {"Accept": "application/json;version=20230302"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=12)) as r:
+            r.raise_for_status()
+            return await r.json()
+
+
+async def fetch_geckoterminal_token(network: str, address: str) -> dict | None:
+    """Fetch token info from GeckoTerminal by network + token address."""
+    try:
+        data = await _gt_get(f"/networks/{network}/tokens/{address.lower()}")
+        return data.get("data", {}).get("attributes")
+    except Exception as e:
+        log.warning("GeckoTerminal token %s/%s: %s", network, address, e)
+        return None
+
+
+async def fetch_geckoterminal_pool(network: str, pool_address: str) -> dict | None:
+    """Fetch pool info from GeckoTerminal; extracts base token details."""
+    try:
+        data = await _gt_get(f"/networks/{network}/pools/{pool_address.lower()}")
+        return data.get("data", {}).get("attributes")
+    except Exception as e:
+        log.warning("GeckoTerminal pool %s/%s: %s", network, pool_address, e)
+        return None
+
+
+def format_geckoterminal_token(attrs: dict, network: str = "") -> str:
+    name = attrs.get("name", "Unknown")
+    symbol = attrs.get("symbol", "?").upper()
+    price = float(attrs.get("price_usd") or 0)
+    change_24h = float(attrs.get("price_change_percentage", {}).get("h24") or 0)
+    vol_24h = float(attrs.get("volume_usd", {}).get("h24") or 0)
+    mcap = float(attrs.get("market_cap_usd") or attrs.get("fdv_usd") or 0)
+    address = attrs.get("address", "")
+
+    arrow = "🟢" if change_24h >= 0 else "🔴"
+    vol_str = f"${vol_24h/1e6:.2f}M" if vol_24h >= 1e6 else f"${vol_24h:,.0f}"
+    mcap_str = f"${mcap/1e6:.2f}M" if mcap >= 1e6 else (f"${mcap:,.0f}" if mcap else "N/A")
+    chain_label = f" · <i>{network.upper()}</i>" if network else ""
+
+    return (
+        f"🪙 <b>{name} ({symbol})</b>{chain_label}\n━━━━━━━━━━━━━━━━━━\n\n"
+        f"💰 <b>Price:</b>  <code>${_fp(price)}</code>  {arrow} <code>{change_24h:+.2f}%</code>\n"
+        f"📊 <b>24h Volume:</b>  {vol_str}\n"
+        f"💎 <b>Market Cap / FDV:</b>  {mcap_str}\n\n"
+        f"🔗 <b>Contract:</b>  <code>{address}</code>\n\n"
+        f"<i>Data: GeckoTerminal · not on CoinGecko main index</i>"
+    )
+
+
+def format_geckoterminal_pool(attrs: dict, network: str = "") -> str:
+    name = attrs.get("name", "Unknown Pool")
+    price = float(attrs.get("base_token_price_usd") or 0)
+    change_24h = float(attrs.get("price_change_percentage", {}).get("h24") or 0)
+    vol_24h = float(attrs.get("volume_usd", {}).get("h24") or 0)
+    liq = float(attrs.get("reserve_in_usd") or 0)
+    dex = attrs.get("dex_id", "")
+    address = attrs.get("address", "")
+
+    arrow = "🟢" if change_24h >= 0 else "🔴"
+    vol_str = f"${vol_24h/1e3:.1f}K" if vol_24h < 1e6 else f"${vol_24h/1e6:.2f}M"
+    liq_str = f"${liq/1e3:.1f}K" if liq < 1e6 else f"${liq/1e6:.2f}M"
+    chain_label = f" · <i>{network.upper()}</i>" if network else ""
+
+    return (
+        f"🏊 <b>{name}</b>{chain_label}\n━━━━━━━━━━━━━━━━━━\n\n"
+        f"💰 <b>Price:</b>  <code>${_fp(price)}</code>  {arrow} <code>{change_24h:+.2f}%</code>\n"
+        f"📊 <b>24h Volume:</b>  {vol_str}\n"
+        f"💧 <b>Liquidity:</b>  {liq_str}\n"
+        f"🔄 <b>DEX:</b>  {dex}\n\n"
+        f"🔗 <b>Pool:</b>  <code>{address}</code>\n\n"
+        f"<i>Data: GeckoTerminal</i>"
+    )
+
+
 async def fetch_coin_by_contract(address: str) -> dict | None:
-    """Try every platform until we find the coin for this contract address."""
+    """Try CoinGecko platforms first, then fall back to GeckoTerminal."""
     import asyncio
     address_lower = address.lower()
 
-    # Try platforms in batches of 6 concurrently to speed up
-    async def _try(platform: str) -> dict | None:
+    async def _try_cg(platform: str) -> dict | None:
         try:
             data = await _get(f"/coins/{platform}/contract/{address_lower}")
             if data.get("id"):
@@ -240,10 +326,20 @@ async def fetch_coin_by_contract(address: str) -> dict | None:
     batch_size = 6
     for i in range(0, len(_CONTRACT_PLATFORMS), batch_size):
         batch = _CONTRACT_PLATFORMS[i:i + batch_size]
-        results = await asyncio.gather(*[_try(p) for p in batch])
+        results = await asyncio.gather(*[_try_cg(p) for p in batch])
         for r in results:
             if r:
                 return r
+
+    # CoinGecko didn't have it — try GeckoTerminal (covers small/new tokens)
+    gt_networks = ["bsc", "eth", "polygon_pos", "arbitrum", "base", "solana",
+                   "optimism", "avalanche", "fantom", "cronos", "tron"]
+    for net in gt_networks:
+        attrs = await fetch_geckoterminal_token(net, address_lower)
+        if attrs and attrs.get("price_usd"):
+            # Wrap in a dict that format_coin_detail won't choke on
+            # We flag it as a GeckoTerminal result with a special key
+            return {"_geckoterminal": True, "_network": net, "_attrs": attrs}
     return None
 
 
