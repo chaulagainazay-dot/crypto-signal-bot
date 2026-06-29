@@ -1,61 +1,99 @@
-"""AI Coach — natural conversation about trading using Claude."""
+"""AI Coach — uses CoinGecko data to answer coin/market questions (no API key needed)."""
 import logging
-import os
-from typing import Optional
-import anthropic
+import re
 
 log = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are an expert crypto trading coach and analyst. You help traders at all levels — from beginners to advanced.
-
-Your role:
-- Answer trading questions with clear, educational explanations
-- Analyse specific coins when asked (but always say prices/predictions are probabilistic, not guaranteed)
-- Help users understand technical analysis concepts
-- Give portfolio feedback based on what users share
-- Create personalised trading plans when requested
-- Always include risk warnings where relevant
-
-Guidelines:
-- Be concise but thorough — use bullet points for clarity
-- Always mention risk management
-- Never guarantee profits or specific price targets
-- Format responses for Telegram (use <b>bold</b> and <code>code</code> tags)
-- When asked "should I buy X?", explain the technicals and fundamentals, then say the decision is theirs
-- Keep responses under 800 words
-
-Remember: You are a coach and educator, not a financial advisor. Always remind users to do their own research (DYOR)."""
-
 
 async def ask_coach(user_message: str, history: list[dict] = None) -> str:
-    """Send a message to the AI coach and get a response."""
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        return (
-            "🤖 <b>AI Coach unavailable</b>\n\n"
-            "ANTHROPIC_API_KEY not configured.\n\n"
-            "Please ask your bot admin to add the API key."
-        )
+    """Analyse the user's question and return CoinGecko-powered insights."""
+    from layers.coingecko_api import (
+        get_coin_id, fetch_coin_detail, format_coin_detail,
+        fetch_global_data, format_global_data,
+        format_gainers, format_losers, format_trending,
+        search_coins,
+    )
 
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    msg = user_message.strip().lower()
 
-    messages = []
-    if history:
-        messages.extend(history[-6:])  # Keep last 3 exchanges
-    messages.append({"role": "user", "content": user_message})
+    # Global market questions
+    if any(k in msg for k in ("market", "global", "total cap", "dominance", "btc dom")):
+        try:
+            gd = await fetch_global_data()
+            text = format_global_data(gd)
+            text += (
+                "\n\n📐 <b>Coach tip:</b> BTC dominance rising = capital rotating into BTC (risk-off). "
+                "Dominance falling = altseason potential.\n\n"
+                "<i>Always set a stop loss. DYOR before any trade.</i>"
+            )
+            return text
+        except Exception as e:
+            log.error("coach global: %s", e)
 
+    # Top gainers
+    if any(k in msg for k in ("gainer", "pump", "moon", "top gain", "best perform")):
+        try:
+            return await format_gainers(10)
+        except Exception as e:
+            log.error("coach gainers: %s", e)
+
+    # Top losers
+    if any(k in msg for k in ("loser", "dump", "worst", "top los", "drop")):
+        try:
+            return await format_losers(10)
+        except Exception as e:
+            log.error("coach losers: %s", e)
+
+    # Trending
+    if any(k in msg for k in ("trend", "hot", "viral", "popular")):
+        try:
+            return await format_trending()
+        except Exception as e:
+            log.error("coach trending: %s", e)
+
+    # Try to extract a coin ticker/name (e.g. "analyse BTC", "what about ETH", "price of solana")
+    words = re.findall(r"\b[a-zA-Z]{2,10}\b", user_message)
+    stop = {"what", "about", "tell", "me", "the", "price", "of", "is", "are", "how", "buy",
+            "sell", "should", "can", "will", "a", "an", "and", "or", "for", "to", "in",
+            "it", "good", "bad", "now", "get", "do", "that", "this", "my", "your", "trading"}
+    candidates = [w for w in words if w.lower() not in stop]
+
+    for word in candidates:
+        coin_id = get_coin_id(word.upper())
+        if not coin_id:
+            # Try search
+            try:
+                results = await search_coins(word)
+                if results:
+                    coin_id = results[0].get("id") or results[0].get("api_symbol") or word.lower()
+            except Exception:
+                pass
+        if coin_id:
+            try:
+                d = await fetch_coin_detail(coin_id)
+                text = format_coin_detail(d)
+                text += (
+                    "\n\n📐 <b>Coach tip:</b> Check support/resistance before entry. "
+                    "ATH distance shows how far from peak euphoria.\n\n"
+                    "⚠️ <i>Not financial advice. Always manage your risk. DYOR.</i>"
+                )
+                return text
+            except Exception as e:
+                log.error("coach coin detail %s: %s", coin_id, e)
+
+    # Fallback: show global market overview
     try:
-        response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=messages,
+        gd = await fetch_global_data()
+        return (
+            format_global_data(gd) +
+            "\n\n💡 <b>Tip:</b> Type a coin name like <code>BTC</code>, <code>ETH</code>, or "
+            "<code>SOL</code> and I'll pull live data for you.\n\n"
+            "<i>Use /price &lt;coin&gt; for a quick price check anytime.</i>"
         )
-        return response.content[0].text
-    except anthropic.AuthenticationError:
-        return "❌ Invalid API key. Please check ANTHROPIC_API_KEY."
-    except anthropic.RateLimitError:
-        return "⚠️ Rate limit reached. Please try again in a moment."
     except Exception as e:
-        log.error("AI coach error: %s", e)
-        return f"❌ Coach temporarily unavailable. Error: {type(e).__name__}"
+        return (
+            "🤖 <b>AI Coach</b>\n\n"
+            "Type a coin symbol (e.g. <code>BTC</code>, <code>SOL</code>) or ask about "
+            "market trends, gainers, losers, or trending coins.\n\n"
+            "<i>Live data powered by CoinGecko.</i>"
+        )
