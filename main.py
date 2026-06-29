@@ -1612,6 +1612,145 @@ async def _send_quiz_question(query, uid: str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# ACCESS CONTROL HANDLERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def on_access_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle ✅ Approve / ❌ Deny buttons sent to the admin."""
+    query = update.callback_query
+    await query.answer()
+    action = query.data  # e.g. "access_approve_123456" or "access_deny_123456"
+    admin_id = str(query.from_user.id)
+
+    # Only the configured admin can approve/deny
+    if admin_id != str(config.TELEGRAM_CHAT_ID):
+        await query.answer("⛔ You are not the admin.", show_alert=True)
+        return
+
+    parts = action.split("_", 2)  # ["access", "approve"/"deny", user_id]
+    if len(parts) != 3:
+        return
+    verb, target_id = parts[1], parts[2]
+
+    from access_control import approve_user, deny_user
+    from telegram.constants import ParseMode as _PM
+
+    if verb == "approve":
+        record = approve_user(target_id)
+        name   = record.get("first_name") or record.get("username") or f"ID:{target_id}"
+        # Edit admin message
+        await query.edit_message_text(
+            f"✅ <b>Access Granted</b>\n\n👤 {name} (<code>{target_id}</code>) can now use the app.",
+            parse_mode=_PM.HTML,
+        )
+        # Notify the approved user
+        try:
+            await ctx.bot.send_message(
+                chat_id=int(target_id),
+                text=(
+                    "✅ <b>Access Approved!</b>\n\n"
+                    "You now have access to the HCG Trading App.\n\n"
+                    "👉 Open it from the bot menu or type /start"
+                ),
+                parse_mode=_PM.HTML,
+            )
+        except Exception:
+            pass  # User may not have started the bot
+
+    elif verb == "deny":
+        deny_user(target_id)
+        await query.edit_message_text(
+            f"❌ <b>Access Denied</b>\n\n<code>{target_id}</code> was denied access.",
+            parse_mode=_PM.HTML,
+        )
+        try:
+            await ctx.bot.send_message(
+                chat_id=int(target_id),
+                text=(
+                    "❌ <b>Access Request Declined</b>\n\n"
+                    "Your request to access the HCG Trading App was not approved.\n\n"
+                    "Contact the group admin if you think this is a mistake."
+                ),
+                parse_mode=_PM.HTML,
+            )
+        except Exception:
+            pass
+
+
+async def cmd_access(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/access — admin command to list pending and approved users."""
+    uid = _user_id(update)
+    if uid != str(config.TELEGRAM_CHAT_ID):
+        await update.message.reply_text("⛔ Admin only.")
+        return
+    from access_control import list_pending, list_approved
+    from telegram.constants import ParseMode as _PM
+    pending  = list_pending()
+    approved = list_approved()
+    text  = f"🔐 <b>App Access Control</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+    text += f"<b>✅ Approved ({len(approved)}):</b>\n"
+    for u in approved[-10:]:
+        n = u.get("first_name") or u.get("username") or u["user_id"]
+        text += f"  • {n} <code>{u['user_id']}</code>\n"
+    text += f"\n<b>⏳ Pending ({len(pending)}):</b>\n"
+    for u in pending:
+        n = u.get("first_name") or u.get("username") or u["user_id"]
+        text += f"  • {n} <code>{u['user_id']}</code> — {u.get('reason','')[:40]}\n"
+    if not pending:
+        text += "  None\n"
+    text += "\n<i>/approve ID  /deny ID  /revoke ID</i>"
+    await update.message.reply_text(text, parse_mode=_PM.HTML)
+
+
+async def cmd_approve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/approve <user_id>"""
+    uid = _user_id(update)
+    if uid != str(config.TELEGRAM_CHAT_ID):
+        return
+    parts = update.message.text.split()[1:]
+    if not parts:
+        await update.message.reply_text("Usage: /approve <user_id>")
+        return
+    from access_control import approve_user
+    record = approve_user(parts[0])
+    await update.message.reply_text(f"✅ Approved <code>{parts[0]}</code>", parse_mode="HTML")
+    try:
+        await ctx.bot.send_message(int(parts[0]),
+            "✅ <b>Access Approved!</b>\n\nYou can now open the HCG Trading App. Type /start",
+            parse_mode="HTML")
+    except Exception:
+        pass
+
+
+async def cmd_deny(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/deny <user_id>"""
+    uid = _user_id(update)
+    if uid != str(config.TELEGRAM_CHAT_ID):
+        return
+    parts = update.message.text.split()[1:]
+    if not parts:
+        await update.message.reply_text("Usage: /deny <user_id>")
+        return
+    from access_control import deny_user
+    deny_user(parts[0])
+    await update.message.reply_text(f"❌ Denied <code>{parts[0]}</code>", parse_mode="HTML")
+
+
+async def cmd_revoke(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/revoke <user_id>"""
+    uid = _user_id(update)
+    if uid != str(config.TELEGRAM_CHAT_ID):
+        return
+    parts = update.message.text.split()[1:]
+    if not parts:
+        await update.message.reply_text("Usage: /revoke <user_id>")
+        return
+    from access_control import revoke_user
+    revoke_user(parts[0])
+    await update.message.reply_text(f"🚫 Revoked <code>{parts[0]}</code>", parse_mode="HTML")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MESSAGE HANDLER
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1967,7 +2106,12 @@ def main():
     app.add_handler(CommandHandler("token", cmd_token))
     app.add_handler(CommandHandler("journal", cmd_journal))
     app.add_handler(CommandHandler("calc", cmd_calc))
-    app.add_handler(CommandHandler("price", cmd_price))
+    app.add_handler(CommandHandler("price",   cmd_price))
+    app.add_handler(CommandHandler("access",  cmd_access))
+    app.add_handler(CommandHandler("approve", cmd_approve))
+    app.add_handler(CommandHandler("deny",    cmd_deny))
+    app.add_handler(CommandHandler("revoke",  cmd_revoke))
+    app.add_handler(CallbackQueryHandler(on_access_button, pattern=r"^access_(approve|deny)_\d+$"))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 

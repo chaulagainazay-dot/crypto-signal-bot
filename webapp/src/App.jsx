@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import AccessGate from './components/AccessGate'
 import BottomNav from './components/BottomNav'
 import Guide from './tabs/Guide'
 import Signals from './tabs/Signals'
@@ -8,6 +9,7 @@ import Research from './tabs/Research'
 import Alerts from './tabs/Alerts'
 
 export default function App() {
+  const [granted, setGranted]   = useState(false)
   const [tab, setTab]           = useState('guide')
   const [researchCoin, setRC]   = useState(null)
 
@@ -27,6 +29,8 @@ export default function App() {
       default:          return <Guide />
     }
   }
+
+  if (!granted) return <AccessGate onGranted={() => setGranted(true)} />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', height: '100vh', background: 'var(--bg)', overflow: 'hidden' }}>
