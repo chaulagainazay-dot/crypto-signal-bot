@@ -181,6 +181,46 @@ async def search_coins(query: str) -> list[dict]:
     return data.get("coins", [])[:5]
 
 
+# Platforms to try for contract address lookup, in priority order
+_CONTRACT_PLATFORMS = [
+    "ethereum",
+    "solana",
+    "binance-smart-chain",
+    "polygon-pos",
+    "arbitrum-one",
+    "base",
+    "optimistic-ethereum",
+    "avalanche",
+    "fantom",
+    "tron",
+]
+
+
+def detect_contract_address(text: str) -> str | None:
+    """Return the address if text looks like a contract address, else None."""
+    import re
+    text = text.strip()
+    # EVM: 0x + 40 hex chars
+    if re.fullmatch(r"0x[0-9a-fA-F]{40}", text):
+        return text
+    # Solana: base58, 32–44 chars (no 0x prefix, alphanumeric minus 0OIl)
+    if re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", text):
+        return text
+    return None
+
+
+async def fetch_coin_by_contract(address: str) -> dict | None:
+    """Try each major platform until we find the coin for this contract address."""
+    for platform in _CONTRACT_PLATFORMS:
+        try:
+            data = await _get(f"/coins/{platform}/contract/{address}")
+            if data.get("id"):
+                return data
+        except Exception:
+            continue
+    return None
+
+
 async def build_live_market_message(action: str) -> str:
     if action == "live_gainers":
         return await format_gainers()

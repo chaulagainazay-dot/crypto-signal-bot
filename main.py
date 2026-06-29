@@ -24,6 +24,7 @@ from layers.l1_data import fetch_latest_news, fetch_fear_greed
 from layers.coingecko_api import (
     build_live_market_message, fetch_global_data, format_global_data,
     fetch_coin_detail, format_coin_detail, get_coin_id, search_coins,
+    detect_contract_address, fetch_coin_by_contract,
 )
 from layers.l2_technical import analyze, fetch_ticker, close_exchange, test_all_sources
 from layers.l_opportunities import scan_opportunities, format_opportunities
@@ -396,17 +397,37 @@ async def cmd_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     parts = update.message.text.split()[1:]
     if not parts:
         await update.message.reply_text(
-            "💰 <b>Price Lookup</b>\n\nUsage: <code>/price BTC</code> or <code>/price ethereum</code>",
+            "💰 <b>Price Lookup</b>\n\n"
+            "Usage:\n"
+            "• <code>/price BTC</code>\n"
+            "• <code>/price ethereum</code>\n"
+            "• <code>/price 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984</code>  (contract address)",
             parse_mode=ParseMode.HTML)
         return
-    query_str = parts[0].upper()
+    query_str = parts[0]
+
+    # Contract address?
+    addr = detect_contract_address(query_str)
+    if addr:
+        await update.message.reply_text(f"🔍 Looking up contract <code>{addr[:10]}…</code>...", parse_mode=ParseMode.HTML)
+        try:
+            d = await fetch_coin_by_contract(addr)
+            if d:
+                await update.message.reply_text(format_coin_detail(d), parse_mode=ParseMode.HTML,
+                                                reply_markup=kb_home())
+                return
+        except Exception:
+            pass
+        await update.message.reply_text(f"❌ No coin found for contract <code>{addr}</code>.", parse_mode=ParseMode.HTML)
+        return
+
     await update.message.reply_text(f"🔍 Looking up <b>{query_str}</b>...", parse_mode=ParseMode.HTML)
     try:
-        coin_id = get_coin_id(query_str) or query_str.lower()
+        coin_id = get_coin_id(query_str.upper()) or query_str.lower()
         d = await fetch_coin_detail(coin_id)
         text = format_coin_detail(d)
         await update.message.reply_text(text, parse_mode=ParseMode.HTML,
-                                        reply_markup=kb([("🔄 Refresh", f"scan_{query_str}")], back="market"))
+                                        reply_markup=kb([("🔄 Refresh", f"scan_{query_str.upper()}")], back="market"))
     except Exception:
         results = await search_coins(query_str)
         if results:

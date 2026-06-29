@@ -11,8 +11,27 @@ async def ask_coach(user_message: str, history: list[dict] = None) -> str:
         get_coin_id, fetch_coin_detail, format_coin_detail,
         fetch_global_data, format_global_data,
         format_gainers, format_losers, format_trending,
-        search_coins,
+        search_coins, detect_contract_address, fetch_coin_by_contract,
     )
+
+    # Contract address check first (EVM 0x... or Solana base58)
+    words = user_message.strip().split()
+    for word in words:
+        addr = detect_contract_address(word)
+        if addr:
+            try:
+                d = await fetch_coin_by_contract(addr)
+                if d:
+                    text = format_coin_detail(d)
+                    text += (
+                        "\n\n📐 <b>Coach tip:</b> Always verify contract addresses on-chain before buying. "
+                        "Rug pulls often clone legit token names.\n\n"
+                        "⚠️ <i>Not financial advice. DYOR.</i>"
+                    )
+                    return text
+            except Exception as e:
+                log.error("coach contract lookup %s: %s", addr, e)
+            return f"❌ Could not find a coin for contract address <code>{addr}</code> on any supported chain."
 
     msg = user_message.strip().lower()
 
