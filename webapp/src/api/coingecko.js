@@ -23,7 +23,7 @@ export async function fetchGlobal() {
 export async function fetchTopCoins(limit = 50) {
   return get(
     `${CG}/coins/markets?vs_currency=usd&order=market_cap_desc` +
-    `&per_page=${limit}&page=1&price_change_percentage=24h`
+    `&per_page=${limit}&page=1&price_change_percentage=24h,7d`
   )
 }
 
@@ -34,9 +34,21 @@ export async function fetchTrending() {
 
 export async function fetchCoinDetail(id) {
   return get(
-    `${CG}/coins/${id}?localization=false&tickers=false` +
-    `&community_data=false&developer_data=false`
+    `${CG}/coins/${id}?localization=false&tickers=true` +
+    `&market_data=true&community_data=false&developer_data=false&sparkline=true`
   )
+}
+
+export async function fetchPriceChart(id, days = 7) {
+  const d = await get(`${CG}/coins/${id}/market_chart?vs_currency=usd&days=${days}`)
+  return d.prices || []
+}
+
+export async function fetchNews(coinId) {
+  try {
+    const d = await get(`${CG}/coins/${coinId}/status_updates?per_page=5`)
+    return d.status_updates || []
+  } catch { return [] }
 }
 
 export async function searchCoins(q) {
@@ -87,4 +99,48 @@ export function fmcap(v) {
 export function isAddress(s) {
   return /^0x[0-9a-fA-F]{40}$/.test(s) ||
          /^[1-9A-HJ-NP-Za-km-z]{32,88}$/.test(s)
+}
+
+// Compute a buy/sell signal from market data
+export function computeSignal(md) {
+  if (!md) return null
+  const chg24  = md.price_change_percentage_24h || 0
+  const chg7d  = md.price_change_percentage_7d   || 0
+  const vol    = md.total_volume?.usd   || 0
+  const mcap   = md.market_cap?.usd     || 1
+  const ath    = md.ath?.usd            || 1
+  const price  = md.current_price?.usd  || 0
+  const athPct = ((price - ath) / ath) * 100   // negative = below ATH
+  const vr     = vol / mcap
+
+  let score = 50 // neutral baseline
+
+  // Momentum
+  if (chg24 > 10) score += 20
+  else if (chg24 > 4) score += 10
+  else if (chg24 < -10) score -= 20
+  else if (chg24 < -4) score -= 10
+
+  // Weekly trend
+  if (chg7d > 15) score += 15
+  else if (chg7d > 5) score += 8
+  else if (chg7d < -15) score -= 15
+  else if (chg7d < -5) score -= 8
+
+  // Volume/mcap ratio
+  if (vr > 0.3) score += 15
+  else if (vr > 0.15) score += 8
+  else if (vr < 0.02) score -= 5
+
+  // ATH distance — if very close to ATH, caution
+  if (athPct > -5) score -= 10   // near ATH, risky to buy
+  else if (athPct < -80) score += 5  // deeply discounted
+
+  score = Math.max(0, Math.min(100, score))
+
+  if (score >= 72) return { label: 'STRONG BUY',  color: '#00E676', bg: '#00E67622', icon: '🚀', score, advice: 'Strong upward momentum. Volume is high. Consider buying in small portions.' }
+  if (score >= 58) return { label: 'BUY',          color: '#00C853', bg: '#00C85322', icon: '📈', score, advice: 'Positive trend. Good time to add a position. Use dollar-cost averaging.' }
+  if (score >= 42) return { label: 'NEUTRAL / HOLD', color: '#F7931A', bg: '#F7931A22', icon: '➡️', score, advice: 'Mixed signals. Wait for clearer direction before entering.' }
+  if (score >= 28) return { label: 'SELL',          color: '#FF3D57', bg: '#FF3D5722', icon: '📉', score, advice: 'Downward pressure. Consider reducing your position.' }
+  return               { label: 'STRONG SELL',  color: '#FF1744', bg: '#FF174422', icon: '🔥', score, advice: 'Heavy selling. Avoid buying. Consider exiting if holding.' }
 }
