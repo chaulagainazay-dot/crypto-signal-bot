@@ -9,7 +9,7 @@ import random
 from datetime import datetime, timezone, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     ContextTypes, MessageHandler, filters,
@@ -94,15 +94,26 @@ _quiz_state: dict[str, dict] = {}
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def main_keyboard() -> InlineKeyboardMarkup:
-    return kb(
-        [("📈 Market", "market"),          ("🎯 Signals", "signals_menu")],
-        [("📚 Learn Trading", "learn"),    ("💼 Portfolio", "portfolio")],
-        [("📰 Research", "research"),      ("🧮 Tools", "tools_menu")],
-        [("🔔 Alerts", "alerts"),          ("🤖 AI Coach", "coach_menu")],
-        [("📊 Journal", "journal"),        ("🏆 Challenges", "challenges")],
-        [("👤 Profile", "profile"),        ("⚙️ Settings", "settings")],
-        home=False,
-    )
+    rows = []
+    if config.WEBAPP_URL:
+        rows.append([InlineKeyboardButton(
+            "🚀 Open App", web_app=WebAppInfo(url=config.WEBAPP_URL)
+        )])
+    rows += [
+        [InlineKeyboardButton("📈 Market", callback_data="market"),
+         InlineKeyboardButton("🎯 Signals", callback_data="signals_menu")],
+        [InlineKeyboardButton("📚 Learn Trading", callback_data="learn"),
+         InlineKeyboardButton("💼 Portfolio", callback_data="portfolio")],
+        [InlineKeyboardButton("📰 Research", callback_data="research"),
+         InlineKeyboardButton("🧮 Tools", callback_data="tools_menu")],
+        [InlineKeyboardButton("🔔 Alerts", callback_data="alerts"),
+         InlineKeyboardButton("🤖 AI Coach", callback_data="coach_menu")],
+        [InlineKeyboardButton("📊 Journal", callback_data="journal"),
+         InlineKeyboardButton("🏆 Challenges", callback_data="challenges")],
+        [InlineKeyboardButton("👤 Profile", callback_data="profile"),
+         InlineKeyboardButton("⚙️ Settings", callback_data="settings")],
+    ]
+    return InlineKeyboardMarkup(rows)
 
 
 def market_keyboard() -> InlineKeyboardMarkup:

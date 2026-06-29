@@ -1,15 +1,23 @@
-"""Single entrypoint — runs both bots as subprocesses."""
-import subprocess, sys, os, signal, logging
+"""Single entrypoint — runs webapp server + both bots as subprocesses."""
+import subprocess, sys, os, signal, logging, time
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO)
 log = logging.getLogger(__name__)
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
+NAMES = ["Webapp", "Crypto", "NEPSE"]
+CMDS  = [
+    [sys.executable, os.path.join(BASE, "serve_webapp.py")],
+    [sys.executable, os.path.join(BASE, "main.py")],
+    [sys.executable, os.path.join(BASE, "nepse", "main.py")],
+]
+CWDS  = [BASE, BASE, os.path.join(BASE, "nepse")]
+
 procs = []
 
 def shutdown(sig, frame):
-    log.info("Shutting down both bots...")
+    log.info("Shutting down...")
     for p in procs:
         p.terminate()
     sys.exit(0)
@@ -17,24 +25,16 @@ def shutdown(sig, frame):
 signal.signal(signal.SIGTERM, shutdown)
 signal.signal(signal.SIGINT, shutdown)
 
-log.info("Starting Crypto Signal Bot...")
-p1 = subprocess.Popen([sys.executable, os.path.join(BASE, "main.py")], cwd=BASE)
-procs.append(p1)
+for name, cmd, cwd in zip(NAMES, CMDS, CWDS):
+    log.info(f"Starting {name}...")
+    procs.append(subprocess.Popen(cmd, cwd=cwd))
 
-log.info("Starting NEPSE Signal Bot...")
-p2 = subprocess.Popen([sys.executable, os.path.join(BASE, "nepse", "main.py")], cwd=os.path.join(BASE, "nepse"))
-procs.append(p2)
+log.info("All 3 processes running.")
 
-log.info("Both bots running. Waiting...")
-# Wait and restart any crashed bot
 while True:
     for i, p in enumerate(procs):
         ret = p.poll()
         if ret is not None:
-            name = "Crypto" if i == 0 else "NEPSE"
-            log.warning(f"{name} bot crashed (exit {ret}), restarting...")
-            if i == 0:
-                procs[0] = subprocess.Popen([sys.executable, os.path.join(BASE, "main.py")], cwd=BASE)
-            else:
-                procs[1] = subprocess.Popen([sys.executable, os.path.join(BASE, "nepse", "main.py")], cwd=os.path.join(BASE, "nepse"))
-    import time; time.sleep(10)
+            log.warning(f"{NAMES[i]} crashed (exit {ret}), restarting...")
+            procs[i] = subprocess.Popen(CMDS[i], cwd=CWDS[i])
+    time.sleep(10)
