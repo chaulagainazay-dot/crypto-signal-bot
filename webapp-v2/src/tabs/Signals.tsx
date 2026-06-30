@@ -2,76 +2,99 @@ import { useState, useEffect, useMemo } from 'react'
 import { fetchTopCoins, fetchTrending } from '../api/coingecko'
 import { generateSignal } from '../utils/signals'
 import { fp } from '../api/coingecko'
-import Spinner from '../components/Spinner'
 import { SkeletonCard } from '../components/Skeleton'
+import { ChipRow, ProgressBar, EmptyState } from '../components/ui'
 import type { Signal, Coin, TrendingCoin } from '../types'
 
 type Filter = 'all' | 'buy' | 'sell' | 'trending' | 'small'
-
-const FILTER_LABELS: Record<Filter, string> = {
-  all: '🌐 All', buy: '🚀 Buy', sell: '📉 Sell', trending: '🔥 Trending', small: '🌱 Small Cap',
-}
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: 'all',      label: 'All'      },
+  { value: 'buy',      label: 'Buy'      },
+  { value: 'sell',     label: 'Sell'     },
+  { value: 'trending', label: 'Trending' },
+  { value: 'small',    label: 'Small Cap'},
+]
 
 const SIG_COLOR: Record<Signal['type'], string> = {
-  'STRONG BUY': '#00E676', 'BUY': '#00C853', 'HOLD': '#F7931A', 'SELL': '#FF3D57', 'STRONG SELL': '#FF1744',
+  'STRONG BUY': '#22C55E', 'BUY': '#4ADE80', 'HOLD': '#F59E0B',
+  'SELL': '#EF4444', 'STRONG SELL': '#DC2626',
+}
+const SIG_CLASS: Record<Signal['type'], string> = {
+  'STRONG BUY': 'badge-buy', 'BUY': 'badge-buy', 'HOLD': 'badge-hold',
+  'SELL': 'badge-sell', 'STRONG SELL': 'badge-sell',
 }
 
 function SignalCard({ sig }: { sig: Signal }) {
   const [open, setOpen] = useState(false)
   const color = SIG_COLOR[sig.type]
+  const chgPos = sig.change24h >= 0
+
   return (
-    <div className="card" style={{ marginBottom: 10, borderLeft: `3px solid ${color}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-        {sig.image && <img src={sig.image} width={34} height={34} style={{ borderRadius: '50%' }} onError={e => ((e.target as HTMLImageElement).style.display = 'none')} />}
-        <div style={{ flex: 1 }}>
-          <strong style={{ fontSize: 14 }}>{sig.symbol.toUpperCase()}</strong>
-          <div className="muted" style={{ fontSize: 11 }}>{sig.name}</div>
+    <div className="card" style={{ borderLeft: `3px solid ${color}`, marginBottom: 8 }}>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        {sig.image && (
+          <img src={sig.image} className="coin-avatar" style={{ width: 36, height: 36 }}
+            onError={e => ((e.target as HTMLImageElement).style.display = 'none')} />
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{sig.symbol.toUpperCase()}</div>
+          <div className="muted" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sig.name}</div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <span style={{ background: color + '22', color, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
-            {sig.type}
-          </span>
-          <div className={`badge badge-${sig.change24h >= 0 ? 'green' : 'red'}`} style={{ marginTop: 4, display: 'block', fontSize: 10 }}>
-            {sig.change24h >= 0 ? '▲' : '▼'}{Math.abs(sig.change24h).toFixed(2)}%
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <span className={`badge ${SIG_CLASS[sig.type]}`}>{sig.type}</span>
+          <div style={{ fontSize: 12, fontWeight: 600, color: chgPos ? 'var(--green)' : 'var(--red)', marginTop: 4 }}>
+            {chgPos ? '+' : ''}{sig.change24h.toFixed(2)}%
           </div>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+      {/* Stats row */}
+      <div className="stat-grid-4" style={{ marginBottom: 10 }}>
         {[
-          { label: 'Price', val: `$${fp(sig.price)}` },
-          { label: 'Score', val: `${sig.score}/100` },
-          { label: 'Confidence', val: `${sig.confidence}%` },
-        ].map(({ label, val }) => (
-          <div key={label} style={{ padding: '6px 10px', background: '#141414', borderRadius: 8 }}>
-            <div className="muted" style={{ fontSize: 9, marginBottom: 2 }}>{label}</div>
-            <div style={{ fontWeight: 700, fontSize: 13 }}>{val}</div>
+          { label: 'Price',      value: `$${fp(sig.price)}` },
+          { label: 'Score',      value: `${sig.score}/100`  },
+          { label: 'Confidence', value: `${sig.confidence}%` },
+          { label: '7d',         value: `${sig.change7d >= 0 ? '+' : ''}${sig.change7d.toFixed(1)}%`, color: sig.change7d >= 0 ? 'var(--green)' : 'var(--red)' },
+        ].map(({ label, value, color: c }) => (
+          <div key={label} className="stat-box">
+            <div className="label">{label}</div>
+            <div className="value" style={c ? { color: c } : undefined}>{value}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ marginBottom: 6 }}>
-        <div style={{ height: 4, background: '#2A2A2A', borderRadius: 2 }}>
-          <div style={{ width: `${sig.score}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.5s' }} />
+      {/* Score bar */}
+      <ProgressBar pct={sig.score} color={color} height={3} />
+
+      {/* Tags */}
+      {(sig.isTrending || sig.isSmallCap) && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          {sig.isTrending && <span className="badge badge-hot">Trending</span>}
+          {sig.isSmallCap && <span className="badge badge-blue">Small Cap</span>}
         </div>
-      </div>
+      )}
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-        {sig.isTrending && <span className="badge badge-orange" style={{ fontSize: 10 }}>🔥 Trending</span>}
-        {sig.isSmallCap && <span className="badge" style={{ background: '#1A2A1A', color: '#00C853', fontSize: 10 }}>🌱 Small Cap</span>}
-        {sig.change7d !== 0 && (
-          <span className="badge" style={{ background: '#1A1A2A', color: '#7C9FF7', fontSize: 10 }}>
-            7d: {sig.change7d >= 0 ? '+' : ''}{sig.change7d.toFixed(1)}%
-          </span>
-        )}
-      </div>
-
-      <button onClick={() => setOpen(o => !o)} style={{ background: 'none', border: 'none', color: '#606060', cursor: 'pointer', fontSize: 12, padding: 0 }}>
-        {open ? '▲ Hide WHY' : '▼ WHY this signal?'}
+      {/* Expand why */}
+      <button onClick={() => setOpen(o => !o)} style={{
+        display: 'flex', alignItems: 'center', gap: 4, marginTop: 10,
+        background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer',
+        fontSize: 12, fontFamily: 'inherit', padding: 0,
+      }}>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"
+          style={{ transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'none' }}>
+          <path d="M3 5l4 4 4-4"/>
+        </svg>
+        Why this signal?
       </button>
+
       {open && (
-        <div style={{ marginTop: 8, padding: '10px 12px', background: '#141414', borderRadius: 8 }}>
-          {sig.reasons.map((r, i) => <div key={i} style={{ fontSize: 12, color: '#C0C0C0', padding: '3px 0', borderBottom: i < sig.reasons.length - 1 ? '1px solid #1E1E1E' : 'none' }}>• {r}</div>)}
+        <div style={{ marginTop: 8, padding: '10px 12px', background: 'var(--surface2)', borderRadius: 8 }}>
+          {sig.reasons.map((r, i) => (
+            <div key={i} style={{ fontSize: 12, color: 'var(--text2)', padding: '4px 0', borderBottom: i < sig.reasons.length - 1 ? '1px solid var(--border2)' : 'none' }}>
+              · {r}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -97,13 +120,8 @@ export default function Signals() {
           total_volume: 0, price_change_24h: 0, price_change_percentage_24h: 0,
           ath: 0, ath_change_percentage: 0, circulating_supply: 0,
         } as Coin))
-
       const allCoins = [...coins, ...trendingExtra]
-      const sigs = allCoins.map(c => {
-        const s = generateSignal(c)
-        s.isTrending = trendingIds.has(c.id)
-        return s
-      })
+      const sigs = allCoins.map(c => { const s = generateSignal(c); s.isTrending = trendingIds.has(c.id); return s })
       sigs.sort((a, b) => Math.abs(b.score - 50) - Math.abs(a.score - 50))
       setSignals(sigs)
       setLastUpdate(new Date())
@@ -114,35 +132,35 @@ export default function Signals() {
   useEffect(() => { load() }, [])
 
   const filtered = useMemo(() => signals.filter(s => {
-    if (filter === 'buy')     return s.score >= 58
-    if (filter === 'sell')    return s.score <= 42
+    if (filter === 'buy')      return s.score >= 58
+    if (filter === 'sell')     return s.score <= 42
     if (filter === 'trending') return s.isTrending
-    if (filter === 'small')   return s.isSmallCap
+    if (filter === 'small')    return s.isSmallCap
     return true
   }), [signals, filter])
 
   return (
     <div className="tab-content">
-      <div className="row" style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>🎯 Signals</h2>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {lastUpdate && <span className="muted" style={{ fontSize: 10 }}>{lastUpdate.toLocaleTimeString()}</span>}
-          <button onClick={load} style={{ background: '#1A1A1A', border: '1px solid #2A2A2A', borderRadius: 8, color: '#A0A0A0', cursor: 'pointer', fontSize: 12, padding: '6px 10px' }}>
-            ↻ Refresh
+      <div className="row" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h1 className="page-title">Signals</h1>
+          {!loading && <span className="badge badge-blue">{filtered.length}</span>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {lastUpdate && <span className="muted" style={{ fontSize: 10 }}>{lastUpdate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+          <button onClick={load} className="btn-icon" title="Refresh">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M13 7.5A5.5 5.5 0 1 1 7.5 2a5.5 5.5 0 0 1 4 1.7"/>
+              <path d="M13 2v3.5H9.5"/>
+            </svg>
           </button>
         </div>
       </div>
 
-      <div className="pills">
-        {(Object.keys(FILTER_LABELS) as Filter[]).map(f => (
-          <button key={f} className={`pill${filter === f ? ' active' : ''}`} onClick={() => setFilter(f)}>
-            {FILTER_LABELS[f]}
-          </button>
-        ))}
-      </div>
+      <ChipRow options={FILTERS} active={filter} onChange={setFilter} />
 
       {loading && [0,1,2,3].map(i => <SkeletonCard key={i} />)}
-      {!loading && filtered.length === 0 && <div className="muted" style={{ textAlign: 'center', padding: '40px 0' }}>No signals for this filter.</div>}
+      {!loading && filtered.length === 0 && <EmptyState icon="🎯" title="No signals" sub="No signals match this filter right now." />}
       {!loading && filtered.slice(0, 50).map(s => <SignalCard key={s.id} sig={s} />)}
     </div>
   )

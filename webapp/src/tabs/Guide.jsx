@@ -88,6 +88,20 @@ const QUIZ = [
   },
 ]
 
+function TipCard({ tip }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="card" style={{ marginBottom: 10, cursor: 'pointer' }} onClick={() => setOpen(o => !o)}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 22 }}>{tip.icon}</span>
+        <strong style={{ fontSize: 14, flex: 1 }}>{tip.title}</strong>
+        <span className="muted">{open ? '▲' : '▼'}</span>
+      </div>
+      {open && <p style={{ marginTop: 10, fontSize: 13, color: '#C0C0C0', lineHeight: 1.7 }}>{tip.body}</p>}
+    </div>
+  )
+}
+
 function newsSentiment(title = '') {
   const t = title.toLowerCase()
   const pos = ['surge','rally','bullish','pump','breakout','gain','high','rise','soar','ath','launch','partnership','adoption','buy','approve','etf','record']
@@ -286,21 +300,7 @@ export default function Guide() {
       {!loading && section === 'learn' && (
         <>
           <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>Tap any card to read the full tip</div>
-          {TIPS.map((tip, i) => {
-            const [open, setOpen] = useState(false)
-            return (
-              <div key={i} className="card" style={{ marginBottom: 10, cursor: 'pointer' }} onClick={() => setOpen(o => !o)}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 22 }}>{tip.icon}</span>
-                  <strong style={{ fontSize: 14, flex: 1 }}>{tip.title}</strong>
-                  <span className="muted">{open ? '▲' : '▼'}</span>
-                </div>
-                {open && (
-                  <p style={{ marginTop: 10, fontSize: 13, color: '#C0C0C0', lineHeight: 1.7 }}>{tip.body}</p>
-                )}
-              </div>
-            )
-          })}
+          {TIPS.map((tip, i) => <TipCard key={i} tip={tip} />)}
         </>
       )}
 

@@ -212,7 +212,10 @@ export async function fetchPriceChart(id, days = 7) {
 // CryptoCompare is already reliable & free — no fallback needed
 export async function fetchCryptoNews(symbol, limit = 6) {
   try {
-    const url = `https://min-api.cryptocompare.com/data/v2/news/?categories=${encodeURIComponent(symbol.toUpperCase())}&lang=EN&limit=${limit}&sortOrder=latest`
+    const isGeneral = !symbol || symbol.toLowerCase() === 'cryptocurrency'
+    const url = isGeneral
+      ? `https://min-api.cryptocompare.com/data/v2/news/?lang=EN&sortOrder=latest`
+      : `https://min-api.cryptocompare.com/data/v2/news/?categories=${encodeURIComponent(symbol.toUpperCase())}&lang=EN&sortOrder=latest`
     const r = await fetch(url, { signal: AbortSignal.timeout(10000) })
     if (!r.ok) throw new Error()
     const d = await r.json()

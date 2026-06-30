@@ -2,62 +2,71 @@ import { useState, useEffect, useCallback } from 'react'
 import { searchCoins, fetchCoinDetail, fp, fmcap } from '../api/coingecko'
 import { useStore } from '../store'
 import { hapticNotify } from '../utils/telegram'
-import Spinner from '../components/Spinner'
+import { Spinner, EmptyState, ProgressBar } from '../components/ui'
 import type { Holding } from '../types'
 
 function useDebounced(value: string, delay = 400) {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), delay)
-    return () => clearTimeout(t)
-  }, [value, delay])
-  return debounced
+  const [d, setD] = useState(value)
+  useEffect(() => { const t = setTimeout(() => setD(value), delay); return () => clearTimeout(t) }, [value, delay])
+  return d
 }
 
 interface LiveData { price: number; chg24: number; mcap: number }
 
 function HoldingCard({ h, live, onRemove }: { h: Holding; live?: LiveData; onRemove: () => void }) {
-  const price = live?.price ?? 0
-  const chg24 = live?.chg24 ?? 0
-  const value = price * h.amount
-  const cost  = h.buyPrice * h.amount
-  const pnl   = value - cost
+  const price  = live?.price ?? 0
+  const chg24  = live?.chg24 ?? 0
+  const value  = price * h.amount
+  const cost   = h.buyPrice * h.amount
+  const pnl    = value - cost
   const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0
-  const pos   = chg24 >= 0
+  const up     = chg24 >= 0
+  const profiting = pnlPct >= 0
 
   return (
-    <div className="card" style={{ marginBottom: 10 }}>
+    <div className="card" style={{ marginBottom: 8 }}>
+      {/* Top row: coin identity + price */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        {h.image && <img src={h.image} width={36} height={36} style={{ borderRadius: '50%' }} onError={e => ((e.target as HTMLImageElement).style.display = 'none')} />}
-        <div style={{ flex: 1 }}>
-          <strong style={{ fontSize: 14 }}>{h.symbol.toUpperCase()}</strong>
-          <div className="muted" style={{ fontSize: 11 }}>{h.name}</div>
+        {h.image && <img src={h.image} className="coin-avatar" onError={e => ((e.target as HTMLImageElement).style.display = 'none')} />}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{h.symbol.toUpperCase()}</div>
+          <div className="muted" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.name}</div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>{price > 0 ? `$${fp(price)}` : '—'}</div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: pos ? '#00C853' : '#FF3D57' }}>
-            {pos ? '▲' : '▼'}{Math.abs(chg24).toFixed(2)}%
+          <div style={{ fontWeight: 700, fontSize: 15 }}>{price > 0 ? `$${fp(price)}` : '—'}</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: up ? 'var(--green)' : 'var(--red)' }}>
+            {up ? '+' : ''}{chg24.toFixed(2)}%
           </div>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+
+      {/* Stats */}
+      <div className="stat-grid-4">
         {[
-          { label: 'Amount', val: h.amount < 0.001 ? h.amount.toExponential(2) : String(h.amount) },
-          { label: 'Buy Price', val: `$${fp(h.buyPrice)}` },
-          { label: 'Value', val: value > 0 ? fmcap(value) : '—' },
-          { label: 'PnL', val: cost > 0 ? `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%` : '—', col: pnlPct >= 0 ? '#00C853' : '#FF3D57' },
-        ].map(({ label, val, col }) => (
-          <div key={label} style={{ padding: '7px 10px', background: '#141414', borderRadius: 8 }}>
-            <div className="muted" style={{ fontSize: 9, marginBottom: 2 }}>{label}</div>
-            <div style={{ fontWeight: 700, fontSize: 12, color: col || '#E0E0E0' }}>{val}</div>
+          { label: 'Amount',    value: h.amount < 0.001 ? h.amount.toExponential(2) : String(h.amount) },
+          { label: 'Avg Buy',   value: `$${fp(h.buyPrice)}` },
+          { label: 'Value',     value: value > 0 ? fmcap(value) : '—' },
+          { label: 'PnL',       value: cost > 0 ? `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%` : '—', color: profiting ? 'var(--green)' : 'var(--red)' },
+        ].map(({ label, value: v, color }) => (
+          <div key={label} className="stat-box">
+            <div className="label">{label}</div>
+            <div className="value" style={color ? { color } : undefined}>{v}</div>
           </div>
         ))}
       </div>
-      <div style={{ marginTop: 10, textAlign: 'right' }}>
-        <button onClick={onRemove} style={{ background: 'none', border: 'none', color: '#404040', cursor: 'pointer', fontSize: 12 }}>
-          Remove
-        </button>
-      </div>
+
+      {cost > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <ProgressBar pct={Math.min(100, Math.max(0, 50 + pnlPct / 2))} color={profiting ? 'var(--green)' : 'var(--red)'} height={3} />
+        </div>
+      )}
+
+      <button onClick={onRemove} style={{
+        marginTop: 10, background: 'none', border: 'none', color: 'var(--text3)',
+        cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', padding: 0,
+      }}>
+        Remove holding
+      </button>
     </div>
   )
 }
@@ -87,10 +96,7 @@ export default function Portfolio() {
       try {
         const d = await fetchCoinDetail(h.coinId) as { market_data?: { current_price?: { usd: number }; price_change_percentage_24h?: number; market_cap?: { usd: number } } }
         const md = d?.market_data
-        if (md) setLivePrices(prev => ({
-          ...prev,
-          [h.coinId]: { price: md.current_price?.usd ?? 0, chg24: md.price_change_percentage_24h ?? 0, mcap: md.market_cap?.usd ?? 0 },
-        }))
+        if (md) setLivePrices(prev => ({ ...prev, [h.coinId]: { price: md.current_price?.usd ?? 0, chg24: md.price_change_percentage_24h ?? 0, mcap: md.market_cap?.usd ?? 0 } }))
       } catch { /* silent */ }
     }
   }, [holdings])
@@ -102,74 +108,93 @@ export default function Portfolio() {
     const amt = parseFloat(amount)
     const bp  = parseFloat(buyPrice)
     if (isNaN(amt) || amt <= 0) { setErr('Enter a valid amount'); return }
-    if (isNaN(bp) || bp <= 0)   { setErr('Enter a valid buy price'); return }
-
-    addHolding({
-      id: `${selected.id}_${Date.now()}`,
-      coinId: selected.id,
-      symbol: selected.symbol,
-      name: selected.name,
-      image: selected.large || selected.thumb || '',
-      amount: amt,
-      buyPrice: bp,
-      addedAt: Date.now(),
-    })
+    if (isNaN(bp)  || bp  <= 0) { setErr('Enter a valid buy price'); return }
+    addHolding({ id: `${selected.id}_${Date.now()}`, coinId: selected.id, symbol: selected.symbol, name: selected.name, image: selected.large || selected.thumb || '', amount: amt, buyPrice: bp, addedAt: Date.now() })
     hapticNotify('success')
     setAdding(false); setSelected(null); setQuery(''); setAmount(''); setBuyPrice(''); setErr('')
   }
 
-  const totalValue = holdings.reduce((sum, h) => sum + (livePrices[h.coinId]?.price ?? 0) * h.amount, 0)
-  const totalCost  = holdings.reduce((sum, h) => sum + h.buyPrice * h.amount, 0)
-  const totalPnlPct = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0
+  const totalValue   = holdings.reduce((s, h) => s + (livePrices[h.coinId]?.price ?? 0) * h.amount, 0)
+  const totalCost    = holdings.reduce((s, h) => s + h.buyPrice * h.amount, 0)
+  const totalPnlPct  = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0
+  const totalPnlAbs  = totalValue - totalCost
 
   return (
     <div className="tab-content">
-      <div className="row" style={{ marginBottom: 14 }}>
-        <h2 style={{ margin: 0 }}>💼 Portfolio</h2>
-        {holdings.length > 0 && (
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontWeight: 800, fontSize: 16 }}>{totalValue > 0 ? fmcap(totalValue) : '—'}</div>
-            {totalCost > 0 && (
-              <div style={{ fontSize: 12, color: totalPnlPct >= 0 ? '#00C853' : '#FF3D57', fontWeight: 600 }}>
-                {totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(1)}% overall
-              </div>
-            )}
-          </div>
+      {/* Header */}
+      <div className="row" style={{ marginBottom: holdings.length > 0 ? 12 : 16 }}>
+        <h1 className="page-title">Portfolio</h1>
+        {!adding && (
+          <button className="btn-icon" onClick={() => setAdding(true)} title="Add holding" style={{ width: 'auto', padding: '0 14px', fontSize: 13, fontWeight: 600, gap: 6, display: 'flex', alignItems: 'center' }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg>
+            Add
+          </button>
         )}
       </div>
 
-      {holdings.length === 0 && !adding && (
-        <div style={{ textAlign: 'center', color: '#505050', padding: '40px 0', lineHeight: 2 }}>
-          No holdings yet.<br />Add your first coin below.
+      {/* Summary strip */}
+      {holdings.length > 0 && totalCost > 0 && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div className="stat-grid-4">
+            <div className="stat-box">
+              <div className="label">Invested</div>
+              <div className="value">{fmcap(totalCost)}</div>
+            </div>
+            <div className="stat-box">
+              <div className="label">Value</div>
+              <div className="value">{totalValue > 0 ? fmcap(totalValue) : '—'}</div>
+            </div>
+            <div className="stat-box">
+              <div className="label">P&amp;L</div>
+              <div className="value" style={{ color: totalPnlPct >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                {totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(1)}%
+              </div>
+            </div>
+            <div className="stat-box">
+              <div className="label">Net</div>
+              <div className="value" style={{ color: totalPnlAbs >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                {totalPnlAbs >= 0 ? '+' : ''}${Math.abs(totalPnlAbs) > 1000 ? fmcap(Math.abs(totalPnlAbs)) : Math.abs(totalPnlAbs).toFixed(0)}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
+      {/* Empty state */}
+      {holdings.length === 0 && !adding && (
+        <EmptyState icon="💼" title="No holdings yet" sub="Track your crypto portfolio with real-time P&L."
+          action={<button className="btn" onClick={() => setAdding(true)}>Add your first coin</button>} />
+      )}
+
+      {/* Holdings list */}
       {holdings.map(h => (
         <HoldingCard key={h.id} h={h} live={livePrices[h.coinId]} onRemove={() => { removeHolding(h.id); hapticNotify('warning') }} />
       ))}
 
-      {adding ? (
+      {/* Add form */}
+      {adding && (
         <div className="card">
-          <div className="section-title" style={{ marginTop: 0 }}>Add Holding</div>
-          <div style={{ position: 'relative', marginTop: 10 }}>
-            <input placeholder="Search any coin…" value={query} onChange={e => { setQuery(e.target.value); setSelected(null); setErr('') }} />
-            {searching && <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#606060' }}>…</div>}
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Add Holding</div>
+
+          <div style={{ position: 'relative', marginBottom: 10 }}>
+            <input placeholder="Search coin by name…" value={query} onChange={e => { setQuery(e.target.value); setSelected(null); setErr('') }} />
+            {searching && <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--text3)' }}>…</div>}
           </div>
 
           {selected && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#0D2A0D', borderRadius: 10, marginTop: 8, border: '1px solid #1A4A1A' }}>
-              {(selected.thumb || selected.large) && <img src={selected.thumb || selected.large} width={28} height={28} style={{ borderRadius: '50%' }} />}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'rgba(34,197,94,0.06)', borderRadius: 10, marginBottom: 10, border: '1px solid rgba(34,197,94,0.2)' }}>
+              {(selected.thumb || selected.large) && <img src={selected.thumb || selected.large} style={{ width: 28, height: 28, borderRadius: '50%' }} />}
               <span style={{ flex: 1, fontWeight: 700, fontSize: 13 }}>{selected.name} ({selected.symbol?.toUpperCase()})</span>
-              <button onClick={() => { setSelected(null); setQuery('') }} style={{ background: 'none', border: 'none', color: '#606060', cursor: 'pointer', fontSize: 16 }}>✕</button>
+              <button onClick={() => { setSelected(null); setQuery('') }} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16 }}>✕</button>
             </div>
           )}
 
           {results.length > 0 && !selected && (
-            <div style={{ background: '#141414', borderRadius: 10, marginTop: 4, border: '1px solid #2A2A2A', maxHeight: 180, overflowY: 'auto' }}>
-              {results.map((r) => (
+            <div style={{ background: 'var(--surface2)', borderRadius: 10, marginBottom: 10, border: '1px solid var(--border)', maxHeight: 180, overflowY: 'auto' }}>
+              {results.map(r => (
                 <div key={r.id} onClick={() => { setSelected(r); setQuery(r.name); setResults([]) }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid #1E1E1E' }}>
-                  {r.thumb && <img src={r.thumb} width={24} height={24} style={{ borderRadius: '50%' }} />}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border2)' }}>
+                  {r.thumb && <img src={r.thumb} style={{ width: 24, height: 24, borderRadius: '50%' }} />}
                   <span style={{ flex: 1, fontSize: 13 }}>{r.name}</span>
                   <span className="muted" style={{ fontSize: 11 }}>{r.symbol?.toUpperCase()}</span>
                 </div>
@@ -177,7 +202,7 @@ export default function Portfolio() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+          <div className="stat-grid-2" style={{ marginBottom: 10 }}>
             <div>
               <div className="muted" style={{ fontSize: 10, marginBottom: 4 }}>Amount</div>
               <input type="number" placeholder="0.5" value={amount} onChange={e => { setAmount(e.target.value); setErr('') }} />
@@ -187,15 +212,15 @@ export default function Portfolio() {
               <input type="number" placeholder="45000" value={buyPrice} onChange={e => { setBuyPrice(e.target.value); setErr('') }} />
             </div>
           </div>
-          {err && <div style={{ color: '#FF3D57', fontSize: 12, marginTop: 6 }}>{err}</div>}
-          <button className="btn" onClick={confirmAdd}>Add to Portfolio</button>
-          <button onClick={() => { setAdding(false); setSelected(null); setQuery(''); setResults([]) }}
-            style={{ background: 'none', border: 'none', color: '#606060', cursor: 'pointer', width: '100%', marginTop: 8, padding: 8, fontSize: 13 }}>
-            Cancel
-          </button>
+
+          {err && <div style={{ color: 'var(--red)', fontSize: 12, marginBottom: 8 }}>{err}</div>}
+          <button className="btn" onClick={confirmAdd} style={{ marginBottom: 8 }}>Add to Portfolio</button>
+          <button className="btn-ghost" onClick={() => { setAdding(false); setSelected(null); setQuery(''); setResults([]) }}>Cancel</button>
         </div>
-      ) : (
-        <button className="btn" onClick={() => setAdding(true)}>＋ Add Holding</button>
+      )}
+
+      {holdings.length > 0 && !adding && (
+        <button className="btn" style={{ marginTop: 8 }} onClick={() => setAdding(true)}>+ Add Holding</button>
       )}
     </div>
   )

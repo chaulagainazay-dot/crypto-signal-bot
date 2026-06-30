@@ -28,7 +28,7 @@ export default function App() {
       case 'signals':   return <Signals />
       case 'portfolio': return <Portfolio />
       case 'research':  return <Research initialCoinId={researchCoinId} />
-      case 'v3':        return <V3Hub />
+      case 'v3':        return <V3Hub goPortfolio={() => setActiveTab('portfolio')} />
       default:          return <Guide />
     }
   }
