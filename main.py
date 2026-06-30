@@ -76,6 +76,23 @@ from layers.l5_delivery import (
 )
 from scanner import run_morning_news, run_morning_analytics, run_manual_scan
 
+# ── v3 backend modules ──────────────────────────────────────────────────────
+from backend.ai.mentor import AIMentor
+from backend.portfolio.doctor import PortfolioDoctor
+from backend.journal.psychology import PsychologyTracker
+from backend.backtest.engine import BacktestEngine
+from backend.risk.meter import RiskMeter
+from backend.whale.tracker import WhaleTracker
+from backend.news.summarizer import NewsSummarizer
+
+_mentor   = AIMentor()
+_doctor   = PortfolioDoctor()
+_psych    = PsychologyTracker()
+_backtest = BacktestEngine()
+_risk     = RiskMeter()
+_whale    = WhaleTracker()
+_news_sum = NewsSummarizer()
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -1718,6 +1735,121 @@ async def on_access_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# V3 COMMANDS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def cmd_mentor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Usage: /mentor BTC  — AI contextual analysis"""
+    args = ctx.args
+    symbol = (args[0].upper() if args else "BTC")
+    uid = update.effective_user.id
+    settings = get_user_settings(uid) or {}
+    user_profile = {
+        'id':           uid,
+        'risk_profile': settings.get('risk_profile', 'medium'),
+        'capital':      float(settings.get('capital', 1000)),
+        'portfolio':    {},
+    }
+    holdings = get_holdings(uid)
+    if holdings:
+        user_profile['portfolio'] = {h['symbol']: h['buy_price'] * h['amount'] for h in holdings}
+
+    analysis = _mentor.analyze(symbol, user_profile)
+    text = _mentor.format_analysis(symbol, analysis, user_profile['capital'])
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+
+
+async def cmd_doctor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Portfolio health check — /doctor"""
+    uid = update.effective_user.id
+    holdings = get_holdings(uid)
+    if not holdings:
+        await update.message.reply_text(
+            "No holdings found. Add some with /add BTC 0.1 50000", parse_mode=ParseMode.HTML
+        )
+        return
+    portfolio = {h['symbol']: h['buy_price'] * h['amount'] for h in holdings}
+    result = _doctor.diagnose(portfolio)
+    await update.message.reply_text(_doctor.format_report(result), parse_mode=ParseMode.HTML)
+
+
+async def cmd_psych(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Trade psychology report — /psych"""
+    uid = update.effective_user.id
+    raw_trades = get_journal_entries(uid) or []
+    trades = [
+        {
+            'symbol':    t.get('symbol', '?'),
+            'pnl':       float(t.get('pnl', 0)),
+            'stop_loss': t.get('stop_loss'),
+        }
+        for t in raw_trades
+    ]
+    result = _psych.analyze_trades(trades)
+    await update.message.reply_text(_psych.format_report(result), parse_mode=ParseMode.HTML)
+
+
+async def cmd_backtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Backtest recent signals — /backtest"""
+    uid = update.effective_user.id
+    raw = get_recent_signals(uid, limit=50) or []
+    signals = [
+        {
+            'symbol':     r.get('symbol', '?'),
+            'action':     r.get('action', 'HOLD'),
+            'price':      float(r.get('price', 0)),
+            'confidence': int(r.get('confidence', 50)),
+        }
+        for r in raw
+    ]
+    if not signals:
+        await update.message.reply_text("No signals logged yet. Check back after using /signals.")
+        return
+    result = _backtest.run(signals)
+    await update.message.reply_text(_backtest.format_report(result), parse_mode=ParseMode.HTML)
+
+
+async def cmd_risk(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Risk meter — /risk BTC 105000 102000 115000  (entry stop target)"""
+    args = ctx.args
+    if len(args) < 4:
+        await update.message.reply_text(
+            "Usage: /risk SYMBOL ENTRY STOP TARGET\nExample: /risk BTC 105000 102000 115000"
+        )
+        return
+    symbol, entry_s, stop_s, target_s = args[0].upper(), args[1], args[2], args[3]
+    try:
+        entry, stop, target = float(entry_s), float(stop_s), float(target_s)
+    except ValueError:
+        await update.message.reply_text("Invalid numbers. Use: /risk BTC 105000 102000 115000")
+        return
+
+    uid = update.effective_user.id
+    settings = get_user_settings(uid) or {}
+    capital = float(settings.get('capital', 1000))
+
+    signal = {'symbol': symbol, 'entry': entry, 'stop': stop, 'target': target}
+    result = _risk.calculate(signal, capital)
+    await update.message.reply_text(_risk.format_card(signal, result), parse_mode=ParseMode.HTML)
+
+
+async def cmd_whale(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Whale tracking — /whale BTC"""
+    args = ctx.args
+    symbol = (args[0].upper() if args else "BTC")
+    data = _whale.get_whale_data(symbol)
+    await update.message.reply_text(_whale.format_card(data), parse_mode=ParseMode.HTML)
+
+
+async def cmd_brief(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Daily market brief — /brief"""
+    await update.message.reply_text("⏳ Fetching news…")
+    articles = await _news_sum.fetch_articles(20)
+    brief = _news_sum.generate_daily_brief(articles)
+    await update.message.reply_text(_news_sum.format_brief(brief), parse_mode=ParseMode.HTML)
+
+
 async def cmd_access(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/access — admin command to list pending and approved users."""
     uid = _user_id(update)
@@ -2139,6 +2271,15 @@ def main():
         .post_init(post_init)
         .build()
     )
+
+    # ── v3 commands ──────────────────────────────────────────────────────────
+    app.add_handler(CommandHandler("mentor",   cmd_mentor))
+    app.add_handler(CommandHandler("doctor",   cmd_doctor))
+    app.add_handler(CommandHandler("psych",    cmd_psych))
+    app.add_handler(CommandHandler("backtest", cmd_backtest))
+    app.add_handler(CommandHandler("risk",     cmd_risk))
+    app.add_handler(CommandHandler("whale",    cmd_whale))
+    app.add_handler(CommandHandler("brief",    cmd_brief))
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("menu", cmd_menu))
