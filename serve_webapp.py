@@ -164,12 +164,32 @@ async def make_app() -> web.Application:
     # ── Static SPA ────────────────────────────────────────────────────────────
 
     async def index(_req):
+        resp = web.FileResponse(DIST / "index.html")
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
+
+    async def serve_root_file(req: web.Request) -> web.Response:
+        """Serve sw.js, workbox-*.js, manifest.webmanifest, registerSW.js directly."""
+        filename = req.match_info['filename']
+        path = DIST / filename
+        if path.exists() and path.is_file():
+            resp = web.FileResponse(path)
+            # Service worker must not be cached by the browser
+            if filename.endswith('.js') or filename.endswith('.webmanifest'):
+                resp.headers['Cache-Control'] = 'no-store'
+            return resp
         return web.FileResponse(DIST / "index.html")
 
     app.router.add_get("/api/check",    api_check)
     app.router.add_post("/api/register", api_register)
     app.router.add_get("/", index)
     app.router.add_static("/assets", DIST / "assets", append_version=True)
+    # Serve PWA files that live in dist root
+    for _name in ["sw.js", "registerSW.js", "manifest.webmanifest"]:
+        if (DIST / _name).exists():
+            app.router.add_get(f"/{_name}", serve_root_file)
+    # Workbox files (hashed names)
+    app.router.add_get(r"/workbox-{filename}", serve_root_file)
     app.router.add_get("/{tail:.*}", index)
 
     return app
