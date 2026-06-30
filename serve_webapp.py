@@ -170,7 +170,11 @@ async def make_app() -> web.Application:
 
     async def serve_root_file(req: web.Request) -> web.Response:
         """Serve sw.js, workbox-*.js, manifest.webmanifest, registerSW.js directly."""
-        filename = req.match_info['filename']
+        info = req.match_info
+        if 'filename' in info:
+            filename = 'workbox-' + info['filename']
+        else:
+            filename = req.path.lstrip('/')
         path = DIST / filename
         if path.exists() and path.is_file():
             resp = web.FileResponse(path)
