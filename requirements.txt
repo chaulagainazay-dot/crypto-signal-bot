@@ -9,8 +9,10 @@ certifi>=2024.0.0
 feedparser>=6.0.11
 matplotlib>=3.7.0
 mplfinance>=0.12.9b7
+numpy>=1.24.0
 pandas>=2.0.0
 praw>=7.7.1
 python-dotenv>=1.0.0
 python-telegram-bot==22.5
+requests>=2.31.0
 ta>=0.11.0
