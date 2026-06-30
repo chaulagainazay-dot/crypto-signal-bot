@@ -14,7 +14,20 @@ DIST = Path(__file__).parent / "webapp-v2" / "dist"
 
 
 async def make_app() -> web.Application:
+    import sys, os
+    sys.path.insert(0, str(Path(__file__).parent))
     from access_control import is_approved, is_pending, register_request
+    from backend.ai.mentor import AIMentor
+    from backend.portfolio.doctor import PortfolioDoctor
+    from backend.risk.meter import RiskMeter
+    from backend.whale.tracker import WhaleTracker
+    from backend.news.summarizer import NewsSummarizer
+
+    _mentor   = AIMentor()
+    _doctor   = PortfolioDoctor()
+    _risk     = RiskMeter()
+    _whale    = WhaleTracker()
+    _news_sum = NewsSummarizer()
 
     app = web.Application()
 
@@ -92,6 +105,61 @@ async def make_app() -> web.Application:
                 await s.post(url, json=payload, timeout=_aiohttp.ClientTimeout(total=10))
         except Exception as e:
             log.error(f"Failed to notify admin: {e}")
+
+    # ── v3 API endpoints ─────────────────────────────────────────────────────
+
+    async def api_mentor(req: web.Request) -> web.Response:
+        """GET /api/v3/mentor?symbol=BTC&capital=1000&risk=medium"""
+        symbol  = req.rel_url.query.get('symbol', 'BTC').upper()
+        capital = float(req.rel_url.query.get('capital', '1000'))
+        risk    = req.rel_url.query.get('risk', 'medium')
+        user_profile = {'risk_profile': risk, 'capital': capital, 'portfolio': {}}
+        result = _mentor.analyze(symbol, user_profile)
+        return web.json_response(result)
+
+    async def api_doctor(req: web.Request) -> web.Response:
+        """POST /api/v3/doctor  body: {portfolio: {BTC: 400, ETH: 300, ...}}"""
+        try:
+            body = await req.json()
+        except Exception:
+            return web.json_response({'ok': False, 'error': 'invalid JSON'}, status=400)
+        portfolio = body.get('portfolio', {})
+        if not portfolio:
+            return web.json_response({'ok': False, 'error': 'empty portfolio'}, status=400)
+        result = _doctor.diagnose(portfolio)
+        return web.json_response(result)
+
+    async def api_risk(req: web.Request) -> web.Response:
+        """GET /api/v3/risk?symbol=BTC&entry=105000&stop=102000&target=115000&capital=1000"""
+        try:
+            entry   = float(req.rel_url.query.get('entry', '0'))
+            stop    = float(req.rel_url.query.get('stop', '0'))
+            target  = float(req.rel_url.query.get('target', '0'))
+            capital = float(req.rel_url.query.get('capital', '1000'))
+            symbol  = req.rel_url.query.get('symbol', 'BTC').upper()
+        except ValueError:
+            return web.json_response({'ok': False, 'error': 'invalid numbers'}, status=400)
+        signal = {'symbol': symbol, 'entry': entry, 'stop': stop, 'target': target}
+        result = _risk.calculate(signal, capital)
+        return web.json_response(result)
+
+    async def api_whale(req: web.Request) -> web.Response:
+        """GET /api/v3/whale?symbol=BTC"""
+        symbol = req.rel_url.query.get('symbol', 'BTC').upper()
+        result = _whale.get_whale_data(symbol)
+        return web.json_response(result)
+
+    async def api_brief(req: web.Request) -> web.Response:
+        """GET /api/v3/brief"""
+        articles = await _news_sum.fetch_articles(20)
+        brief = _news_sum.generate_daily_brief(articles)
+        return web.json_response(brief)
+
+    app.router.add_get('/api/v3/mentor', api_mentor)
+    app.router.add_post('/api/v3/doctor', api_doctor)
+    app.router.add_get('/api/v3/risk',   api_risk)
+    app.router.add_get('/api/v3/whale',  api_whale)
+    app.router.add_get('/api/v3/brief',  api_brief)
 
     # ── Static SPA ────────────────────────────────────────────────────────────
 

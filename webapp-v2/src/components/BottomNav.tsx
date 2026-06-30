@@ -2,11 +2,11 @@ import { hapticImpact } from '../utils/telegram'
 import type { TabId } from '../types'
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
-  { id: 'guide',     icon: '🤖', label: 'Guide'    },
+  { id: 'guide',     icon: '📖', label: 'Guide'    },
   { id: 'signals',   icon: '🎯', label: 'Signals'  },
-  { id: 'strategy',  icon: '📊', label: 'Strategy' },
   { id: 'portfolio', icon: '💼', label: 'Portfolio' },
   { id: 'research',  icon: '🔍', label: 'Research' },
+  { id: 'v3',        icon: '✨', label: 'AI'        },
 ]
 
 interface Props { active: TabId; onSelect: (tab: TabId) => void }
@@ -26,8 +26,8 @@ export default function BottomNav({ active, onSelect }: Props) {
             style={{
               flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
               justifyContent: 'center', gap: 3, border: 'none', background: 'none',
-              cursor: 'pointer', padding: '6px 0',
-              color: isActive ? '#F7931A' : '#505050',
+              cursor: 'pointer', padding: '6px 0', position: 'relative',
+              color: isActive ? (tab.id === 'v3' ? '#a78bfa' : '#F7931A') : '#505050',
               transition: 'color 0.15s',
             }}
           >
@@ -38,7 +38,8 @@ export default function BottomNav({ active, onSelect }: Props) {
             {isActive && (
               <div style={{
                 position: 'absolute', bottom: 0, width: 24, height: 2,
-                background: '#F7931A', borderRadius: 2,
+                background: tab.id === 'v3' ? '#a78bfa' : '#F7931A',
+                borderRadius: 2,
               }} />
             )}
           </button>

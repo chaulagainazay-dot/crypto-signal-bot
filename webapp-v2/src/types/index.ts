@@ -113,4 +113,51 @@ export interface NewsArticle {
   imageurl?: string
 }
 
-export type TabId = 'guide' | 'signals' | 'strategy' | 'portfolio' | 'research' | 'alerts'
+export type TabId = 'guide' | 'signals' | 'portfolio' | 'research' | 'v3'
+
+// v3 types
+export interface MentorAnalysis {
+  recommendation: 'BUY' | 'WAIT' | 'SELL'
+  reasons: string[]
+  entry_conditions: string[]
+  allocation: Record<string, number>
+  risk_warnings: string[]
+}
+
+export interface DoctorReport {
+  overall_score: number
+  health_status: 'HEALTHY' | 'NEEDS_ATTENTION' | 'CRITICAL'
+  breakdown: Record<string, number>
+  problems: string[]
+  recommendations: string[]
+  target_allocation: Record<string, number>
+}
+
+export interface RiskResult {
+  risk_level: string
+  reward_level: string
+  risk_reward_ratio: number
+  position_size: number
+  position_size_percent: number
+  max_loss: number
+  max_gain: number
+  scenarios: { best_case: number; base_case: number; worst_case: number }
+}
+
+export interface WhaleData {
+  symbol: string
+  netflow_usd_m: number
+  whale_accumulation: boolean
+  interpretation: string
+  large_transactions: Array<{ entity: string; action: string; amount: number; value_usd_m: number; time: string }>
+  exchange_flows: { inflow: number; outflow: number; net: number }
+}
+
+export interface NewsBrief {
+  btc_sentiment: string
+  eth_sentiment: string
+  alt_sentiment: string
+  top_event: string
+  key_levels: Record<string, string>
+  article_count: number
+}

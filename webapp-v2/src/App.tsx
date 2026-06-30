@@ -7,10 +7,9 @@ import ErrorBoundary from './components/ErrorBoundary'
 import AccessGate from './components/AccessGate'
 import Guide from './tabs/Guide'
 import Signals from './tabs/Signals'
-import Strategy from './tabs/Strategy'
 import Portfolio from './tabs/Portfolio'
 import Research from './tabs/Research'
-import Alerts from './tabs/Alerts'
+import V3Hub from './tabs/V3Hub'
 import type { TabId } from './types'
 
 export default function App() {
@@ -27,10 +26,9 @@ export default function App() {
     switch (activeTab as TabId) {
       case 'guide':     return <Guide />
       case 'signals':   return <Signals />
-      case 'strategy':  return <Strategy />
       case 'portfolio': return <Portfolio />
       case 'research':  return <Research initialCoinId={researchCoinId} />
-      case 'alerts':    return <Alerts />
+      case 'v3':        return <V3Hub />
       default:          return <Guide />
     }
   }
@@ -42,7 +40,7 @@ export default function App() {
       <ErrorBoundary>
         {renderTab()}
       </ErrorBoundary>
-      <BottomNav active={activeTab as TabId} onSelect={t => { setActiveTab(t); }} />
+      <BottomNav active={activeTab as TabId} onSelect={t => { setActiveTab(t) }} />
     </div>
   )
 }
