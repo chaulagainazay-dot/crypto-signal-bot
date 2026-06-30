@@ -10,6 +10,7 @@ import logging
 from typing import Optional
 
 import aiohttp
+from tqdm import tqdm
 
 def _make_session() -> aiohttp.ClientSession:
     resolver = aiohttp.AsyncResolver(nameservers=["8.8.8.8", "8.8.4.4"])
@@ -86,7 +87,8 @@ async def run_morning_analytics(bot: Bot):
             await push(bot, "⚠️ Morning analytics delayed — macro event lockout active.")
             return
 
-        for asset in config.WATCHLIST:
+        for asset in tqdm(config.WATCHLIST, desc="Morning scan", unit="coin"):
+            await asyncio.sleep(0.2)  # 0.2s between coins — stay within free-tier rate limits
             try:
                 ticker = await fetch_ticker(asset)
                 ta     = await analyze(asset)
@@ -163,7 +165,8 @@ async def run_manual_scan(bot: Bot, notify_chat_id: str) -> tuple[int, int]:
         anthropic_client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
 
     async with _make_session() as session:
-        for asset in config.WATCHLIST:
+        for asset in tqdm(config.WATCHLIST, desc="Manual scan", unit="coin"):
+            await asyncio.sleep(0.2)  # 0.2s between coins — stay within free-tier rate limits
             try:
                 ta = await analyze(asset)
                 scanned += 1
