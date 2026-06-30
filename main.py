@@ -2209,7 +2209,7 @@ async def scheduled_morning_news(app: Application):
 
 async def scheduled_morning_analytics(app: Application):
     try:
-        await run_morning_analytics(app.bot, config.TELEGRAM_CHAT_ID, config.WATCHLIST)
+        await run_morning_analytics(app.bot)
     except Exception as e:
         logger.error("Morning analytics error: %s", e)
 
